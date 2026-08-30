@@ -7,7 +7,7 @@ games. FastAPI + one WebSocket endpoint (`backend/server.py`) drives game execut
 and recording; a vanilla JS/Canvas frontend (`frontend/`) renders and captures
 input. `uv` manages the Python env; the Makefile is the command surface.
 
-```
+```text
 backend/
   server.py            WebSocket session loop: start/action -> GameSource -> Recorder
   config.py            ARC_API_KEY loading

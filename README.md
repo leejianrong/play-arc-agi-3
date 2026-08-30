@@ -30,7 +30,7 @@ make run
 ## Configuration
 
 | Variable | Required | Default | Meaning |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ARC_API_KEY` | yes | — | From [arcprize.org/platform](https://arcprize.org/platform). Server only; never sent to the frontend. |
 | `PORT` | no | `8000` | Preferred port. If taken, `make run` picks a free one and tells you. |
 | `RECORDINGS_DIR` | no | `recordings/` | Where session recordings land. |
