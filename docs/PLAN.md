@@ -61,7 +61,7 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | R0 | Play any real ARC-AGI-3 game from a local, responsive UI, authenticated with your own API key | Core goal |
 | R1 | The on-screen grid updates on every response with no perceptible client-side rendering delay | Must-have |
 | R2 | Support every action type: ACTION1-5 (keyboard), ACTION6 (mouse click with x,y), ACTION7 (undo, when offered), and RESET | Must-have |
-| R3 | Every action and the frame it produced is recorded automatically, with no explicit save step | Must-have |
+| R3 | Recording is opt-in (off/lean/full, chosen per session before it starts) — superseded by ADR-0005, which found "automatic, no explicit save step" made every throwaway session pile up a large file | Must-have |
 | R4 | List available games — the real catalog, plus discovered local custom envs once R6 lands — and let the user pick one | Must-have |
 | R5 | Show live game state: score/levels_completed, win_levels, GameState, available actions | Must-have |
 | R6 | Support locally-authored custom puzzle environments through the same play+record flow | Must-have |
@@ -75,7 +75,7 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | S1 | `ArcadeGameSource`, one implementation wrapping `arc_agi.Arcade` — `NORMAL` mode for real games (downloads once, executes locally), `OFFLINE` mode for hand-authored custom envs (V2) — producing a normalized `FrameData` | ADR-0004 |
 | S2 | FastAPI backend, one WebSocket session endpoint: client sends `start`/`action` messages, server replies with `FrameData` after every `GameSource` call | ADR-0001 |
 | S3 | Vanilla JS + Canvas single-page frontend: renders `FrameData.frame` as a colored grid, captures keyboard/mouse, sends WS messages | ADR-0001 |
-| S4 | `Recorder`: subscribes to every `FrameData` a `GameSource` produces (including from `reset()`), appends one versioned JSONL line per step | ADR-0003 |
+| S4 | `Recorder`, opt-in per session (off/lean/full, chosen in the picker): subscribes to every `FrameData` a `GameSource` produces (including from `reset()`), appends one versioned JSONL line per step; lean mode omits the frame grid | ADR-0003, ADR-0005 |
 | S5 | `.env`-based `ARC_API_KEY` loaded server-side only; server binds `127.0.0.1` only | — |
 
 ## Affordances
@@ -84,7 +84,7 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 
 | Affordance | Place | Wires to |
 |------------|-------|----------|
-| Game picker (list + click to start) | Landing screen | WS `start {game_id}` → `GameSource.reset()` |
+| Game picker, with a per-game swatch and a Recording (off/lean/full) control | Landing screen | WS `start {game_id, record}` → `GameSource.reset()` |
 | Canvas grid | Play screen | Renders latest `FrameData.frame` |
 | Keyboard: arrows/WASD, space, backspace, R | Play screen | WS `action {id}` → `GameSource.step()` |
 | Mouse click on grid | Play screen | WS `action {id: 6, data: {x,y}}`, coordinates scaled to 0-63 |

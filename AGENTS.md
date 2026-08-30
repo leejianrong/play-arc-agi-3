@@ -11,7 +11,7 @@ input. `uv` manages the Python env; the Makefile is the command surface.
 backend/
   server.py            WebSocket session loop: start/action -> GameSource -> Recorder
   config.py            ARC_API_KEY loading
-  recorder.py          JSONL session recorder (ADR-0003)
+  recorder.py          JSONL session recorder (ADR-0003, ADR-0005: opt-in, off by default)
   game_sources/
     base.py            GameSource protocol, FrameData, GameState/ActionId
     arcade.py           ArcadeGameSource -- the one execution path (see HOW)

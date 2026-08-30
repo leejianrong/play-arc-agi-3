@@ -3,8 +3,9 @@
 A local client for playing real [ARC-AGI-3](https://three.arcprize.org) games. The
 hosted web UI is slow because it round-trips to ARC's servers on every move; this app
 downloads a game's real source once (via ARC's own `arc_agi` toolkit) and runs every
-action after that locally, in-process. Every move is recorded to a JSONL file, so a
-future annotation tool has something to load.
+action after that locally, in-process. Recording a session to a JSONL file is opt-in
+(off by default — pick Lean or Full in the picker before you start), so a future
+annotation tool has something to load when you actually want it.
 
 Personal, single-user, local-only. Not published, not deployed anywhere.
 
@@ -38,9 +39,14 @@ make run
 
 A game's source is downloaded once per game and cached under `environment_files/`
 (gitignored) — replaying a game you've already played needs no network at all.
-Recordings land under `recordings/` (also gitignored): one JSONL file per session,
-one line per move, full frame included — see
-[docs/adr/0003-recording-format.md](docs/adr/0003-recording-format.md).
+
+Recording defaults to **off**. Pick `Lean` or `Full` from the picker before you start
+a game to turn it on for that session — it lands under `recordings/` (also
+gitignored), one JSONL file per session, one line per move. `Lean` skips the frame
+grid (games are deterministic, so a lean recording's frames can always be
+reconstructed later by replaying its actions); `Full` includes it. See
+[docs/adr/0003-recording-format.md](docs/adr/0003-recording-format.md) and
+[docs/adr/0005-opt-in-recording.md](docs/adr/0005-opt-in-recording.md).
 
 ## Everyday commands
 

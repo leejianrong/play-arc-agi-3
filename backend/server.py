@@ -65,19 +65,29 @@ async def session(websocket: WebSocket) -> None:
             try:
                 if msg_type == "start":
                     game_id = message["game_id"]
+                    record_mode = message.get("record", "off")
+                    if record_mode not in ("off", "lean", "full"):
+                        raise GameSourceError(f"unknown record mode {record_mode!r}")
+
                     game_source = ArcadeGameSource(arcade, game_id)
-                    recorder = Recorder(recordings_dir_from_env(), "local", game_id)
+                    recorder = (
+                        Recorder(recordings_dir_from_env(), "local", game_id, record_mode)
+                        if record_mode != "off"
+                        else None
+                    )
                     frame_data = await game_source.reset()
-                    recorder.append(frame_data)
+                    if recorder is not None:
+                        recorder.append(frame_data)
                     await websocket.send_json({"type": "frame", "frame_data": frame_data.to_wire()})
 
                 elif msg_type == "action":
-                    if game_source is None or recorder is None:
+                    if game_source is None:
                         raise GameSourceError("no active session — send 'start' first")
                     frame_data: FrameData = await game_source.step(
                         message["action_id"], x=message.get("x"), y=message.get("y")
                     )
-                    recorder.append(frame_data)
+                    if recorder is not None:
+                        recorder.append(frame_data)
                     await websocket.send_json({"type": "frame", "frame_data": frame_data.to_wire()})
 
                 else:

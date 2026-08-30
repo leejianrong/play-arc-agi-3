@@ -71,7 +71,7 @@ def make_client(monkeypatch, tmp_path):
     return TestClient(server.app)
 
 
-def test_start_then_three_actions_produces_four_recording_lines(monkeypatch, tmp_path):
+def test_start_full_then_three_actions_produces_four_recording_lines(monkeypatch, tmp_path):
     client = make_client(monkeypatch, tmp_path)
 
     with client.websocket_connect("/ws/session") as ws:
@@ -79,7 +79,7 @@ def test_start_then_three_actions_produces_four_recording_lines(monkeypatch, tmp
         assert games_message["type"] == "games"
         assert games_message["games"][0]["game_id"] == "tst1"
 
-        ws.send_json({"type": "start", "game_id": "tst1"})
+        ws.send_json({"type": "start", "game_id": "tst1", "record": "full"})
         frame_message = ws.receive_json()
         assert frame_message["type"] == "frame"
         assert frame_message["frame_data"]["action_input"]["id"] == 0
@@ -92,11 +92,56 @@ def test_start_then_three_actions_produces_four_recording_lines(monkeypatch, tmp
 
     recordings = list(tmp_path.glob("*.recording.jsonl"))
     assert len(recordings) == 1
+    assert ".full." in recordings[0].name
     lines = recordings[0].read_text().strip().splitlines()
     assert len(lines) == 4
     parsed = [json.loads(line) for line in lines]
     assert [p["step_index"] for p in parsed] == [0, 1, 2, 3]
     assert [p["action_id"] for p in parsed] == [0, 1, 2, 6]
+    assert all(p["frame"] is not None for p in parsed)
+
+
+def test_start_lean_omits_frame_but_keeps_state(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.receive_json()  # games
+        ws.send_json({"type": "start", "game_id": "tst1", "record": "lean"})
+        ws.receive_json()  # frame
+        ws.send_json({"type": "action", "action_id": 1})
+        ws.receive_json()  # frame
+
+    recordings = list(tmp_path.glob("*.recording.jsonl"))
+    assert len(recordings) == 1
+    assert ".lean." in recordings[0].name
+    parsed = [json.loads(line) for line in recordings[0].read_text().strip().splitlines()]
+    assert all(p["frame"] is None for p in parsed)
+    assert all(p["mode"] == "lean" for p in parsed)
+    assert [p["state"] for p in parsed] == ["NOT_FINISHED", "NOT_FINISHED"]
+
+
+def test_start_without_record_field_defaults_off_and_writes_nothing(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.receive_json()  # games
+        ws.send_json({"type": "start", "game_id": "tst1"})
+        ws.receive_json()  # frame
+        ws.send_json({"type": "action", "action_id": 1})
+        ws.receive_json()  # frame
+
+    assert list(tmp_path.glob("*.recording.jsonl")) == []
+
+
+def test_unknown_record_mode_is_a_clean_error(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.receive_json()  # games
+        ws.send_json({"type": "start", "game_id": "tst1", "record": "everything"})
+        reply = ws.receive_json()
+        assert reply["type"] == "error"
+        assert "record mode" in reply["message"]
 
 
 def test_action_before_start_returns_error_not_disconnect(monkeypatch, tmp_path):
