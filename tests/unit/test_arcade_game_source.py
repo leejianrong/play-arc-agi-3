@@ -89,7 +89,8 @@ async def test_reset_action_id_zero_resets(offline_arcade):
 
 
 async def test_step_before_reset_raises():
-    source = ArcadeGameSource(Arcade(operation_mode=OperationMode.OFFLINE, environments_dir=FIXTURES_DIR), "tst1")
+    arcade = Arcade(operation_mode=OperationMode.OFFLINE, environments_dir=FIXTURES_DIR)
+    source = ArcadeGameSource(arcade, "tst1")
     with pytest.raises(GameSourceError, match="before reset"):
         await source.step(1)
 

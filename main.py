@@ -44,7 +44,7 @@ def main() -> None:
         print(f"port {preferred_port} is in use, using {port} instead", file=sys.stderr)
 
     url = f"http://{HOST}:{port}"
-    print(f"\n  ARC Play running at {url}\n  (open that URL in your browser -- not opened automatically,\n   this environment has no working GUI browser to hand it to)\n")
+    print(f"\n  ARC Play running at {url}\n  (not opened automatically -- open it yourself)\n")
     uvicorn.run("backend.server:app", host=HOST, port=port, reload=False)
 
 

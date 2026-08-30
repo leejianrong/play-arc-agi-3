@@ -37,7 +37,9 @@ from .base import (
 _ACTIONS_BY_VALUE = {member.value: member for member in GameAction}
 
 
-def _normalize(frame_data_raw: FrameDataRaw | None, game_id: str, fallback_frame: list | None = None) -> FrameData:
+def _normalize(
+    frame_data_raw: FrameDataRaw | None, game_id: str, fallback_frame: list | None = None
+) -> FrameData:
     if frame_data_raw is None:
         raise GameSourceError(
             f"{game_id} produced no frame data (see the server log for the underlying error)"

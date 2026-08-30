@@ -81,7 +81,9 @@ async def session(websocket: WebSocket) -> None:
                     await websocket.send_json({"type": "frame", "frame_data": frame_data.to_wire()})
 
                 else:
-                    await websocket.send_json({"type": "error", "message": f"unknown message type {msg_type!r}"})
+                    await websocket.send_json(
+                        {"type": "error", "message": f"unknown message type {msg_type!r}"}
+                    )
 
             except GameSourceError as exc:
                 await websocket.send_json({"type": "error", "message": str(exc)})
