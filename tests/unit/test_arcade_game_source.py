@@ -61,6 +61,22 @@ async def test_action6_carries_xy_through(offline_arcade):
     assert frame_data.action_input.data == {"x": 3, "y": 5}
 
 
+async def test_action_after_win_reuses_last_frame_instead_of_erroring(offline_arcade):
+    # Regression test: arcengine's own perform_action() returns frame=[] for
+    # any non-RESET action once state is WIN/GAME_OVER (confirmed in
+    # arcengine/base_game.py) -- this is normal, not a step failure.
+    source = ArcadeGameSource(offline_arcade, "tst1")
+    await source.reset()
+    won = await source.step(1)  # win
+    assert len(won.frame) == 1  # a real frame from the winning move itself
+
+    again = await source.step(1)  # keep pressing after the game already ended
+
+    assert again.state.value == "WIN"
+    assert again.frame == won.frame  # last real frame reused, not an error
+    assert again.action_input.id == 1
+
+
 async def test_reset_action_id_zero_resets(offline_arcade):
     source = ArcadeGameSource(offline_arcade, "tst1")
     await source.reset()

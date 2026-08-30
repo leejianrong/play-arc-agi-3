@@ -37,17 +37,31 @@ from .base import (
 _ACTIONS_BY_VALUE = {member.value: member for member in GameAction}
 
 
-def _normalize(frame_data_raw: FrameDataRaw | None, game_id: str) -> FrameData:
-    if frame_data_raw is None or frame_data_raw.is_empty():
+def _normalize(frame_data_raw: FrameDataRaw | None, game_id: str, fallback_frame: list | None = None) -> FrameData:
+    if frame_data_raw is None:
         raise GameSourceError(
             f"{game_id} produced no frame data (see the server log for the underlying error)"
         )
+    # arcengine's own perform_action() deliberately returns frame=[] for any
+    # non-RESET action once a game is already WIN/GAME_OVER (confirmed in
+    # arcengine/base_game.py) -- "nothing new to render", not a failure. Fall
+    # back to the last real frame so FrameData.frame is never empty: the
+    # recorder and the frontend both assume a real grid is always present.
+    if frame_data_raw.is_empty():
+        if fallback_frame is None:
+            raise GameSourceError(
+                f"{game_id} ended with no frame ever rendered -- press R to restart"
+            )
+        frame = fallback_frame
+    else:
+        frame = [layer.tolist() for layer in frame_data_raw.frame]
+
     action_input = frame_data_raw.action_input
     return FrameData(
         source="local",
         game_id=frame_data_raw.game_id,
         guid=frame_data_raw.guid or "",
-        frame=[layer.tolist() for layer in frame_data_raw.frame],
+        frame=frame,
         state=GameState(frame_data_raw.state.value),
         levels_completed=frame_data_raw.levels_completed,
         win_levels=frame_data_raw.win_levels,
@@ -100,6 +114,7 @@ class ArcadeGameSource:
         self.game_id = game_id
         self._seed = seed
         self._env = None
+        self._last_frame: list | None = None
 
     async def reset(self) -> FrameData:
         try:
@@ -110,7 +125,10 @@ class ArcadeGameSource:
             raise GameSourceError(
                 f"could not load game {self.game_id!r} -- check it exists and your API key can access it"
             )
-        return _normalize(self._env.observation_space, self.game_id)
+        self._last_frame = None
+        frame_data = _normalize(self._env.observation_space, self.game_id)
+        self._last_frame = frame_data.frame
+        return frame_data
 
     async def step(self, action_id: int, x: int | None = None, y: int | None = None) -> FrameData:
         if self._env is None:
@@ -130,7 +148,9 @@ class ArcadeGameSource:
             data["y"] = y
 
         frame_data_raw = await asyncio.to_thread(self._env.step, action, data)
-        return _normalize(frame_data_raw, self.game_id)
+        frame_data = _normalize(frame_data_raw, self.game_id, fallback_frame=self._last_frame)
+        self._last_frame = frame_data.frame
+        return frame_data
 
     async def close(self) -> None:
         pass

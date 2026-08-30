@@ -1,8 +1,6 @@
 import os
 import socket
 import sys
-import threading
-import webbrowser
 
 import uvicorn
 from dotenv import load_dotenv
@@ -45,7 +43,8 @@ def main() -> None:
     if port != preferred_port:
         print(f"port {preferred_port} is in use, using {port} instead", file=sys.stderr)
 
-    threading.Timer(1.0, lambda: webbrowser.open(f"http://{HOST}:{port}")).start()
+    url = f"http://{HOST}:{port}"
+    print(f"\n  ARC Play running at {url}\n  (open that URL in your browser -- not opened automatically,\n   this environment has no working GUI browser to hand it to)\n")
     uvicorn.run("backend.server:app", host=HOST, port=port, reload=False)
 
 
