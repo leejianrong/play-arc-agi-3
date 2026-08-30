@@ -34,9 +34,10 @@ what got tried first and reverted.
 **Commands** — `make help` lists them all; the ones that matter:
 
 ```sh
-make run     # start the app, prints the URL (doesn't auto-open a browser -- see README)
-make check   # lint + test -- run this before considering any change done
-make hooks   # one-time: installs make check as .git/hooks/pre-push
+make run             # start the app, prints the URL (doesn't auto-open a browser -- see README)
+make check           # lint + test -- run this before considering any change done
+make hooks           # one-time: installs make check as .git/hooks/pre-push
+make download-games  # fetch every real game's source into environment_files/ (idempotent)
 ```
 
 **Trust the code over these docs where they disagree**, and fix the doc.
@@ -79,8 +80,11 @@ a settled question. Add a new ADR for a genuinely new architectural decision; do
 edit history into an old one. `docs/PLAN.md` and `docs/SLICES.md` track scope and
 what's built vs. planned — update them when either changes materially.
 
-### No CI yet
+### CI and branch protection
 
-Solo, local-only, no git remote. `make check` (and the pre-push hook it installs)
-is the whole gate. If this repo ever gets a remote, revisit `dev-playbook`'s CI/PR
-checklist — none of it applies yet.
+Published at github.com/leejianrong/play-arc-agi-3. `.github/workflows/ci.yml` runs
+`make check` on every push/PR to `main` — no `ARC_API_KEY` needed, every test is
+mocked or runs a real fixture game (`tests/fixtures/`), never a live API call.
+`main` requires a PR with a green `check` run to merge; the repo owner can bypass
+for a direct push, nobody else can. Force-push and branch deletion are blocked
+outright, no bypass.
