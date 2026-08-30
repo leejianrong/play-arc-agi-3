@@ -1,8 +1,15 @@
 # ADR-0002: GameSource abstraction over remote API and local `arc_agi` envs
 
-- Status: Accepted
+- Status: Partially superseded by [ADR-0004](0004-local-execution-via-arc-agi-toolkit.md)
 - Date: 2026-08-30
 - Deciders: Jian (user), agent (recommendation)
+
+> **2026-08-30 update:** the "real games can't run locally" premise below
+> was wrong — see ADR-0004. `RemoteGameSource` and the remote/local split
+> described here were replaced by a single `ArcadeGameSource`. This ADR is
+> kept for the historical record and because the underlying research on the
+> REST API contract (scorecard lifecycle, FrameData shape) is still
+> accurate and still used by `arc_agi` itself.
 
 ## Context
 

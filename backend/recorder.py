@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .game_sources.base import FrameData
@@ -25,7 +25,7 @@ class Recorder:
     def __init__(self, recordings_dir: Path, source: str, game_id: str) -> None:
         self._recordings_dir = recordings_dir
         self._recordings_dir.mkdir(parents=True, exist_ok=True)
-        started_at = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        started_at = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         filename = f"{_safe_component(source)}.{_safe_component(game_id)}.{started_at}.recording.jsonl"
         self.path = self._recordings_dir / filename
         self._step_index = 0
@@ -34,7 +34,7 @@ class Recorder:
         line = {
             "schema_version": SCHEMA_VERSION,
             "step_index": self._step_index,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "source": frame_data.source,
             "game_id": frame_data.game_id,
             "guid": frame_data.guid,

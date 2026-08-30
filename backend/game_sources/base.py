@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
-from typing import Literal, Optional, Protocol
+from typing import Literal, Protocol
 
 
 class GameState(StrEnum):
@@ -37,8 +37,8 @@ class ActionInputEcho:
     """Echo of the action that produced a FrameData, as the API returns it."""
 
     id: int
-    data: Optional[dict] = None
-    reasoning: Optional[dict] = None
+    data: dict | None = None
+    reasoning: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,8 +77,8 @@ class FrameData:
 class GameMeta:
     game_id: str
     source: GameSourceKind
-    title: Optional[str] = None
-    tags: Optional[list[str]] = None
+    title: str | None = None
+    tags: list[str] | None = None
 
 
 class GameSource(Protocol):
@@ -90,7 +90,7 @@ class GameSource(Protocol):
     async def reset(self) -> FrameData: ...
 
     async def step(
-        self, action_id: int, x: Optional[int] = None, y: Optional[int] = None
+        self, action_id: int, x: int | None = None, y: int | None = None
     ) -> FrameData: ...
 
     async def close(self) -> None: ...

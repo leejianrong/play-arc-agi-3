@@ -5,9 +5,11 @@ Status: agreed · Milestone: MVP
 ## Problem
 
 The official ARC-AGI-3 web UI is laggy and unresponsive, which gets in the
-way of actually playing the games. The real games' logic runs exclusively on
-ARC's servers — there is no offline reimplementation available — so the fix
-has to be a fast local *client*, not a fully offline game.
+way of actually playing the games. **Correction (2026-08-30, ADR-0004):**
+this plan originally assumed the real games' logic runs exclusively on ARC's
+servers with no offline path. That was wrong — ARC's own `arc_agi` toolkit
+downloads a game's real source once and runs every subsequent action
+locally. The actual fix is local execution, not just a leaner client.
 
 There's also no way today to record a play session as you go: what you saw,
 what you did, and when. That matters because the longer-term goal is an
@@ -49,9 +51,8 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 - Multi-user, cloud sync, mobile. Single laptop, single user.
 - Packaging as an installable desktop app (see ADR-0001) — you run a local
   command, not double-click an icon, for now.
-- Eliminating network latency to the real games. Their state is authoritative
-  on ARC's servers; this project can only remove client-side overhead, not
-  the network round-trip. See ADR-0001's Consequences.
+- A live online scorecard or shareable replay for real games. Local
+  execution (ADR-0004) tracks scoring locally only, by design.
 
 ## Requirements
 
@@ -71,7 +72,7 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 
 | Part | Mechanism | ADR |
 |------|-----------|-----|
-| S1 | `GameSource` interface with two implementations — `RemoteGameSource` (httpx against `three.arcprize.org`) and `LocalGameSource` (wraps `arc_agi.Arcade`) — both producing a normalized `FrameData` | ADR-0002 |
+| S1 | `ArcadeGameSource`, one implementation wrapping `arc_agi.Arcade` — `NORMAL` mode for real games (downloads once, executes locally), `OFFLINE` mode for hand-authored custom envs (V2) — producing a normalized `FrameData` | ADR-0004 |
 | S2 | FastAPI backend, one WebSocket session endpoint: client sends `start`/`action` messages, server replies with `FrameData` after every `GameSource` call | ADR-0001 |
 | S3 | Vanilla JS + Canvas single-page frontend: renders `FrameData.frame` as a colored grid, captures keyboard/mouse, sends WS messages | ADR-0001 |
 | S4 | `Recorder`: subscribes to every `FrameData` a `GameSource` produces (including from `reset()`), appends one versioned JSONL line per step | ADR-0003 |
@@ -95,26 +96,26 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | Affordance | Kind | Wires to |
 |------------|------|----------|
 | `Recorder.append()` | handler, fired on every `FrameData` | Writes one JSONL line under `recordings/` |
-| `RemoteGameSource` | HTTP client | `three.arcprize.org/api/cmd/{RESET,ACTION1-7}` |
-| `LocalGameSource` | local process wrapper | `arc_agi.Arcade`, `environment_files/` |
+| `ArcadeGameSource` | local process wrapper | `arc_agi.Arcade` (`NORMAL`/`OFFLINE`), `environment_files/` |
 
 ## Implementation decisions
 
-Backend modules: `backend/game_sources/{base.py,remote.py,local.py}` (the
-`GameSource` protocol and its two implementations, ADR-0002),
-`backend/recorder.py` (ADR-0003), `backend/server.py` (FastAPI app + the one
-WebSocket route + game-picker REST endpoint). Frontend is a single
-`frontend/index.html` + `frontend/app.js`, no build step, no framework —
-matches ADR-0001's bias toward minimal toolchain.
+Backend modules: `backend/game_sources/{base.py,arcade.py}` (the
+`GameSource` protocol and its one implementation, ADR-0004),
+`backend/config.py` (`ARC_API_KEY` loading), `backend/recorder.py`
+(ADR-0003), `backend/server.py` (FastAPI app + the one WebSocket route).
+Frontend is a single `frontend/index.html` + `frontend/app.js`, no build
+step, no framework — matches ADR-0001's bias toward minimal toolchain.
 
 `FrameData` is the one normalized shape everything downstream depends on:
 `game_id, guid, source, frame, state, levels_completed, win_levels,
-action_input, available_actions`. Both `GameSource` implementations must
-produce exactly this shape — enforced by a shared contract test (ADR-0002),
-not by inheritance tricks.
+action_input, available_actions`. `source` is always `"local"` now
+(ADR-0004) — kept as a field rather than dropped, since it's still a useful
+tag if a third execution path ever shows up.
 
-Only one session is active per running server process (Q7, ASSUMED). A
-second browser tab connecting mid-session is a known MVP limitation, not
+One `Arcade` (and its scorecard) is constructed per WebSocket connection,
+not per game — switching games mid-session reuses the same catalog fetch.
+A second browser tab connecting mid-session is a known MVP limitation, not
 handled gracefully — surfacing this cleanly (reject vs. take over) is
 deferred, since it's cheap to add a lock later without touching the rest of
 the design.
@@ -133,15 +134,16 @@ this project needs real infra, so there's no separate slow layer yet.
 
 ## Testing approach
 
-The seams worth testing: the `GameSource` contract (both implementations
-must produce identical-shaped `FrameData` from equivalent inputs — this is
-what ADR-0002's abstraction is actually betting on), the WebSocket session
-loop (message in → correct `GameSource` call → correct message out →
-correct recording line), and the Recorder in isolation (given a sequence of
-`FrameData`, does the file on disk match). UI behavior (rendering, input
-mapping) is covered by a manual end-to-end pass per slice, since this is a
-human-play tool and the actual acceptance test is "does it feel responsive
-to play" — not something a headless test can assert.
+The seams worth testing: `ArcadeGameSource`'s normalization from
+`arcengine.FrameDataRaw` to our own `FrameData` (exercised against a real,
+tiny fixture game in `OFFLINE` mode — no network, no mocking of `arc_agi`
+internals), the WebSocket session loop (message in → correct `GameSource`
+call → correct message out → correct recording line), and the Recorder in
+isolation (given a sequence of `FrameData`, does the file on disk match). UI
+behavior (rendering, input mapping) is covered by a manual end-to-end pass
+per slice, since this is a human-play tool and the actual acceptance test is
+"does it feel responsive to play" — not something a headless test can
+assert.
 
 ## Assumed defaults
 
@@ -149,30 +151,32 @@ to play" — not something a headless test can assert.
 |----|---------|----------------|
 | Q6 | Flat JSONL files, no database | Low — migrating to a DB later is a straight import of existing files |
 | Q7 | One active session per server process | Low — add a session lock/registry later without touching `GameSource` or `Recorder` |
-| Q8 | Thin custom client, not the `ARC-AGI-3-Agents` framework | Medium — would mean pulling in that framework's dependency surface later if we're ever wrong that it's unneeded |
+| Q8 | Depend on `arc_agi` directly (not the higher-level `ARC-AGI-3-Agents` agent-competition framework) — superseded by ADR-0004, which uses `arc_agi.Arcade` for real games too, not just custom envs | Low — already paid off; `arc_agi` alone pulls no LangGraph/AgentOps surface |
 | Q9 | Canvas rendering, not DOM | Low — isolated to the frontend renderer |
 | Q10 | Specific keyboard/mouse mapping | Low — a config-level remap, not a redesign |
 | Q17 | 16-color palette guessed from ARC-AGI convention, confirmed empirically | Low — visually obvious and fixed in slice V1 the moment a real game is rendered |
 
 ## Open risks
 
-- **Network latency to the real API may still feel slow**, regardless of
-  client quality — this is the biggest risk to the core motivation ("laggy
-  and unresponsive"). Revealed immediately in slice V1's manual playtest; if
-  it's the dominant lag source rather than client-side rendering, that's
-  worth knowing before investing further.
-- **`arc_agi`'s local `Arcade` API surface** for custom environments is
-  understood at the source level (`arc_agi/local_wrapper.py`,
-  `arc_agi/base.py`) but not yet built against. Revealed when building
-  slice V2.
 - **Exact 0-15 color palette** wasn't confirmed from an authoritative source
   during planning. Low risk, immediately visible and fixable in slice V1.
+- **`Arcade.close_scorecard()`'s local `ScorecardManager` behavior under
+  real extended play** (many games, many hours) hasn't been observed beyond
+  a short smoke test. Low risk — worst case is stale local state, not a
+  crash, since gameplay no longer routes through scorecard-keyed lookups
+  (ADR-0004).
 
 Resolved during V1 build-plan research (2026-08-30), by reading
 `arcprize/ARC-AGI`'s own client source (`arc_agi/remote_wrapper.py`,
 `arc_agi/api.py`) rather than the hosted docs, which proved incomplete: the
 remote API requires a scorecard (`POST /api/scorecard/open` → `card_id`,
-passed into the first `RESET`) that earlier research had missed entirely —
-see ADR-0002's revised Context; the list-games endpoint is confirmed as
-`GET /api/games`; and the rate limit is a generous 600 requests/minute,
-non-issue for human play speed.
+passed into the first `RESET`) that earlier research had missed entirely;
+the list-games endpoint is confirmed as `GET /api/games`; and the rate limit
+is a generous 600 requests/minute. That research is now mostly of historical
+interest — see ADR-0004: after the user reported real, live lag,
+`RemoteGameSource` was retired in favor of local execution via `arc_agi`'s
+own `NORMAL` mode, which resolved both the lag (0.5ms/action measured
+locally, vs. a full HTTP round trip before) and the 400-error report
+(caused by the remote server's 15-minute scorecard idle-timeout evicting a
+cached session — structurally impossible once actions no longer route
+through that cache).

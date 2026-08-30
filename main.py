@@ -31,8 +31,8 @@ def resolve_port(preferred: int, host: str) -> int:
 def main() -> None:
     load_dotenv()
 
+    from backend.config import api_key_from_env
     from backend.game_sources.base import GameSourceError
-    from backend.game_sources.remote import api_key_from_env
 
     try:
         api_key_from_env()

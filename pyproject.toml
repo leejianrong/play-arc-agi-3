@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
+    "arc-agi>=0.9.9",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "python-dotenv>=1.2.3",
@@ -15,7 +16,6 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "respx>=0.23.1",
 ]
 
 [tool.pytest.ini_options]

@@ -1,6 +1,7 @@
-"""WebSocket session loop, driven end-to-end against a stub RemoteGameSource
-so no real network call is made. Covers SLICES.md V1's integration test plan:
-reset -> N actions -> the recording file has N+1 well-formed JSONL lines.
+"""WebSocket session loop, driven end-to-end against a stub ArcadeGameSource
+so no real download or game execution happens. Covers SLICES.md V1's
+integration test plan: reset -> N actions -> the recording file has N+1
+well-formed JSONL lines.
 """
 
 import json
@@ -8,16 +9,21 @@ import json
 from fastapi.testclient import TestClient
 
 from backend import server
-from backend.game_sources.base import ActionInputEcho, FrameData, GameMeta, GameSourceError, GameState
+from backend.game_sources.base import (
+    ActionInputEcho,
+    FrameData,
+    GameMeta,
+    GameSourceError,
+    GameState,
+)
 
 
 class StubGameSource:
-    source = "remote"
+    source = "local"
 
-    def __init__(self, game_id: str, api_key: str) -> None:
+    def __init__(self, arcade, game_id: str) -> None:
         self.game_id = game_id
         self._guid = "guid-1"
-        self._closed = False
 
     async def reset(self) -> FrameData:
         return self._frame(action_id=0)
@@ -26,11 +32,11 @@ class StubGameSource:
         return self._frame(action_id=action_id)
 
     async def close(self) -> None:
-        self._closed = True
+        pass
 
     def _frame(self, action_id: int) -> FrameData:
         return FrameData(
-            source="remote",
+            source="local",
             game_id=self.game_id,
             guid=self._guid,
             frame=[[[0] * 64 for _ in range(64)]],
@@ -43,13 +49,23 @@ class StubGameSource:
         )
 
 
-async def stub_list_remote_games(api_key, base_url=None):
-    return [GameMeta(game_id="ls20", source="remote", title="Locksmith")]
+async def stub_make_arcade(api_key):
+    return object()  # opaque sentinel; StubGameSource ignores it
+
+
+def stub_list_games(arcade):
+    return [GameMeta(game_id="tst1", source="local", title="Test Game")]
+
+
+async def stub_close_arcade(arcade):
+    pass
 
 
 def make_client(monkeypatch, tmp_path):
-    monkeypatch.setattr(server, "RemoteGameSource", StubGameSource)
-    monkeypatch.setattr(server, "list_remote_games", stub_list_remote_games)
+    monkeypatch.setattr(server, "ArcadeGameSource", StubGameSource)
+    monkeypatch.setattr(server, "make_arcade", stub_make_arcade)
+    monkeypatch.setattr(server, "list_games", stub_list_games)
+    monkeypatch.setattr(server, "close_arcade", stub_close_arcade)
     monkeypatch.setattr(server, "api_key_from_env", lambda: "test-key")
     monkeypatch.setattr(server, "recordings_dir_from_env", lambda: tmp_path)
     return TestClient(server.app)
@@ -61,9 +77,9 @@ def test_start_then_three_actions_produces_four_recording_lines(monkeypatch, tmp
     with client.websocket_connect("/ws/session") as ws:
         games_message = ws.receive_json()
         assert games_message["type"] == "games"
-        assert games_message["games"][0]["game_id"] == "ls20"
+        assert games_message["games"][0]["game_id"] == "tst1"
 
-        ws.send_json({"type": "start", "game_id": "ls20"})
+        ws.send_json({"type": "start", "game_id": "tst1"})
         frame_message = ws.receive_json()
         assert frame_message["type"] == "frame"
         assert frame_message["frame_data"]["action_input"]["id"] == 0
@@ -94,7 +110,7 @@ def test_action_before_start_returns_error_not_disconnect(monkeypatch, tmp_path)
         assert "start" in reply["message"]
 
         # connection still alive after an error
-        ws.send_json({"type": "start", "game_id": "ls20"})
+        ws.send_json({"type": "start", "game_id": "tst1"})
         frame_message = ws.receive_json()
         assert frame_message["type"] == "frame"
 
@@ -104,15 +120,15 @@ def test_game_source_error_during_action_is_surfaced_not_raised(monkeypatch, tmp
 
     class FailingStep(StubGameSource):
         async def step(self, action_id: int, x=None, y=None) -> FrameData:
-            raise GameSourceError("simulated API failure")
+            raise GameSourceError("simulated failure")
 
-    monkeypatch.setattr(server, "RemoteGameSource", FailingStep)
+    monkeypatch.setattr(server, "ArcadeGameSource", FailingStep)
 
     with client.websocket_connect("/ws/session") as ws:
         ws.receive_json()  # games
-        ws.send_json({"type": "start", "game_id": "ls20"})
+        ws.send_json({"type": "start", "game_id": "tst1"})
         ws.receive_json()  # frame from reset
         ws.send_json({"type": "action", "action_id": 1})
         reply = ws.receive_json()
         assert reply["type"] == "error"
-        assert "simulated API failure" in reply["message"]
+        assert "simulated failure" in reply["message"]
