@@ -37,9 +37,11 @@ test("typing targets are inputs, textareas, selects and contenteditable only", (
   assert.equal(isTypingTarget(null), false);
 });
 
-test("H opens a hypothesis; Y confirms and N refutes, case-insensitively", () => {
+test("H focuses the hypothesis box, V toggles dictation, Y/N mark the one being tested", () => {
   assert.deepEqual(annotationHotkey("h"), { kind: "hypothesis" });
   assert.deepEqual(annotationHotkey("H"), { kind: "hypothesis" });
+  assert.deepEqual(annotationHotkey("v"), { kind: "dictate" });
+  assert.deepEqual(annotationHotkey("V"), { kind: "dictate" });
   assert.deepEqual(annotationHotkey("y"), { kind: "verdict", verdict: "confirmed" });
   assert.deepEqual(annotationHotkey("N"), { kind: "verdict", verdict: "refuted" });
 });

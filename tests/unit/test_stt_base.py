@@ -29,3 +29,13 @@ def test_fake_transcriber_scripts_and_records_calls():
 def test_fake_transcriber_can_simulate_unavailable_engine():
     with pytest.raises(TranscriberUnavailable):
         FakeTranscriber(load_error="no model").load()
+
+
+@pytest.mark.parametrize("raw", ["Um...", "umm", "Uh,", "Hmm.", "mm-hmm", "Ahh", "er", "Erm..."])
+def test_clean_text_drops_lone_hesitations(raw):
+    assert clean_text(raw) == ""
+
+
+def test_clean_text_keeps_real_sentences_that_start_with_a_filler():
+    assert clean_text("Um, I think the cross rotates it") == "Um, I think the cross rotates it"
+    assert clean_text("Okay") == "Okay"

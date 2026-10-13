@@ -247,27 +247,80 @@
     }
     .phase-chip:hover { background: var(--panel-hover); }
     .phase-chip.is-current { color: var(--ink); background: #e8c46a; border-color: #e8c46a; font-weight: 600; }
-    #transcript .hypotheses { display: flex; gap: 4px; flex-wrap: wrap; min-height: 0; }
-    .hyp-chip {
+    .hyp-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 8px 0;
+    }
+    .hyp-head { display: flex; align-items: center; gap: 10px; }
+    .hyp-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-dim); }
+    .hyp-dictate, .hyp-dictating button {
+      margin-left: auto;
       font-family: var(--mono);
       font-size: 11px;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
       background: var(--ink);
       color: var(--fg);
       border: 1px solid var(--line);
-      border-left-width: 4px;
-      padding: 3px 8px;
+      padding: 3px 9px;
       cursor: pointer;
-      text-align: left;
     }
-    .hyp-chip.open { border-left-color: #e8c46a; }
-    .hyp-chip.confirmed { border-left-color: #4cc38a; }
-    .hyp-chip.refuted { border-left-color: #e5484d; text-decoration: line-through; color: var(--fg-dim); }
-    .hyp-chip.is-selected { outline: 2px solid var(--fg-dim); outline-offset: 1px; }
-    .hyp-chip.pending { border-left-color: #e8c46a; color: #e8c46a; font-style: italic; cursor: default; }
+    .hyp-dictate.is-on { background: #3a1518; color: var(--danger-fg); border-color: #e5484d; }
+    .hyp-add {
+      background: var(--ink);
+      color: var(--fg);
+      border: 1px solid var(--line);
+      font-family: var(--sans);
+      font-size: 13px;
+      padding: 7px 9px;
+    }
+    .hyp-add:focus { outline: 2px solid #e8c46a; outline-offset: 0; }
+    .hyp-dictating {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: #3a1518;
+      color: var(--danger-fg);
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+    .hyp-empty { font-size: 12px; color: var(--fg-dim); }
+    .hyp-list { display: flex; flex-direction: column; gap: 4px; }
+    .hyp-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-left-width: 4px;
+      padding: 6px 8px;
+      cursor: pointer;
+    }
+    .hyp-row.open { border-left-color: #e8c46a; }
+    .hyp-row.confirmed { border-left-color: #4cc38a; }
+    .hyp-row.refuted { border-left-color: #e5484d; }
+    .hyp-row.is-selected { background: var(--panel-hover); box-shadow: inset 0 0 0 1px var(--fg-dim); }
+    .hyp-id { flex: none; font-family: var(--mono); font-size: 11px; color: var(--fg-dim); padding-top: 2px; }
+    .hyp-text { flex: 1; min-width: 0; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+    .hyp-row.refuted .hyp-text { text-decoration: line-through; color: var(--fg-dim); }
+    .hyp-row .badge { flex: none; font-family: var(--mono); font-size: 10px; padding: 1px 6px; border: 1px solid currentColor; }
+    .hyp-row .badge.testing { color: #e8c46a; }
+    .hyp-row .badge.true { color: #4cc38a; }
+    .hyp-row .badge.false { color: #e5484d; }
+    .hyp-actions { flex: none; display: flex; gap: 4px; }
+    .hyp-actions button {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--panel);
+      color: var(--fg);
+      border: 1px solid var(--line);
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+    .hyp-actions button.yes:hover, .hyp-actions button.yes.is-active { background: #12281d; border-color: #4cc38a; color: #a8e6c3; }
+    .hyp-actions button.no:hover, .hyp-actions button.no.is-active { background: #3a1518; border-color: #e5484d; color: var(--danger-fg); }
     #transcript .prompt {
       display: none;
       align-items: center;
@@ -371,7 +424,23 @@
         <span class="mute" data-role="mute">mic on (M)</span>
       </div>
       <div class="phases" data-role="phases" title="Keys 1-5 set the phase. It starts at observe and flips to probe when you first touch the game."></div>
-      <div class="hypotheses" data-role="hypotheses" title="H = state a hypothesis (say or type it next). Y = confirmed, N = refuted. Click a chip to select it."></div>
+      <div class="hyp-section" data-role="hyp-section">
+        <div class="hyp-head">
+          <span class="hyp-title">Hypotheses to test</span>
+          <button type="button" class="hyp-dictate" data-role="dictate" tabindex="-1"
+            title="Dictate: every sentence you say becomes a hypothesis, until you stop (V)">&#127897; dictate (V)</button>
+        </div>
+        <input class="hyp-add" data-role="hyp-add" type="text" maxlength="300" autocomplete="off"
+          placeholder="type a hypothesis, Enter to add (Esc: back to the game)" />
+        <div class="hyp-dictating" data-role="hyp-dictating">
+          Dictating: every sentence you say becomes a hypothesis.
+          <button type="button" data-role="hyp-stop" tabindex="-1">stop</button>
+        </div>
+        <div class="hyp-list" data-role="hyp-list"></div>
+        <div class="hyp-empty" data-role="hyp-empty">
+          None yet. Add several, test them in the game, and mark each true or false when you know.
+        </div>
+      </div>
       <div class="prompt" data-role="prompt">
         <span data-role="prompt-text"></span>
         <button type="button" data-role="prompt-dismiss" tabindex="-1">dismiss</button>
@@ -381,7 +450,7 @@
       <div class="interim" data-role="interim"></div>
       <input class="note" data-role="note" type="text" maxlength="500" placeholder="press T to type a note, Enter to save, Esc to cancel" autocomplete="off" />
     </div>
-    <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset<br>Annotating: 1-5 = phase · H = hypothesis (then Y confirmed / N refuted) · T = type a note · M = mute mic</p>
+    <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset<br>Annotating: 1-5 = phase · H = add a hypothesis · V = dictate hypotheses · Y/N = mark the one being tested true/false · T = note · M = mute</p>
   </div>
 
   <script type="module" src="/static/app.js"></script>

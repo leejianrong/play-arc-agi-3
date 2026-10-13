@@ -212,7 +212,7 @@ def test_h_then_typed_note_makes_a_hypothesis_and_y_n_set_verdicts(monkeypatch, 
 
         ws.send_json({"type": "hypothesis_verdict", "verdict": "confirmed"})  # nothing selected
         err = ws.receive_json()
-        assert err["type"] == "error" and "press H" in err["message"]
+        assert err["type"] == "error" and "add one first" in err["message"]
 
         ws.send_json({"type": "hypothesis_select", "hypothesis_id": "h1"})
         assert ws.receive_json()["selected"] == "h1"
@@ -274,3 +274,52 @@ def test_level_clear_sends_a_level_cleared_message_once_per_clear(monkeypatch, t
         assert ws.receive_json()["type"] == "frame"
         assert ws.receive_json()["phase"] == "observe"
         assert ws.receive_json() == {"type": "level_cleared", "level": 2}
+
+
+def test_add_several_hypotheses_then_mark_them_in_any_order_by_id(monkeypatch, tmp_path):
+    client = client_for(monkeypatch, tmp_path)
+    with client.websocket_connect("/ws/session") as ws:
+        start_annotated(ws)
+        for text in ("blue cross rotates it", "grey square is the goal", "three moves only"):
+            ws.send_json({"type": "hypothesis_add", "text": f"  {text}  "})
+            state = ws.receive_json()
+            assert state["type"] == "hypothesis_state"
+        assert [h["statement"] for h in state["hypotheses"]][-1] == "three moves only"
+        assert [h["status"] for h in state["hypotheses"]] == ["open"] * 3 and state["selected"] == "h3"
+
+        ws.send_json({"type": "hypothesis_verdict", "hypothesis_id": "h2", "verdict": "refuted"})
+        state = ws.receive_json()
+        assert [h["status"] for h in state["hypotheses"]] == ["open", "refuted", "open"]
+        assert state["selected"] == "h3"  # marking another one does not steal focus
+        ws.send_json({"type": "hypothesis_verdict", "hypothesis_id": "h1", "verdict": "confirmed"})
+        assert [h["status"] for h in ws.receive_json()["hypotheses"]] == ["confirmed", "refuted", "open"]
+        ws.send_json({"type": "hypothesis_verdict", "hypothesis_id": "h2", "verdict": "open"})
+        assert ws.receive_json()["hypotheses"][1]["status"] == "open"  # changed my mind
+        ws.send_json({"type": "hypothesis_add", "text": "   "})
+        assert ws.receive_json()["type"] == "error"
+        ws.send_json({"type": "hypothesis_verdict", "hypothesis_id": "h9", "verdict": "refuted"})
+        assert ws.receive_json()["type"] == "error"
+    assert [e["hypothesis_id"] for e in kinds(tmp_path, "hypothesis")] == ["h1", "h2", "h3"]
+    assert len(kinds(tmp_path, "hypothesis_verdict")) == 3
+
+
+def test_dictate_mode_turns_each_spoken_sentence_into_a_hypothesis_until_stopped(monkeypatch, tmp_path):
+    client = client_for(monkeypatch, tmp_path)
+    with client.websocket_connect("/ws/session") as ws:
+        announce = start_annotated(ws)
+        ws.send_json({"type": "hypothesis_dictate", "on": True})
+        state = ws.receive_json()
+        assert state["batch"] is True and state["pending"] is False
+        with client.websocket_connect(f"/ws/audio?session={announce['session_id']}") as audio:
+            audio.receive_json()
+            audio.receive_json()
+            audio.send_text(json.dumps({"type": "audio_start"}))
+            for _ in range(2):  # two separate sentences
+                audio.send_bytes(PCM + silence(200) + speechlike(700) + silence(1300))
+            audio.send_text(json.dumps({"type": "audio_end"}))
+            states = drain_until(audio, "flushed")
+        assert len([m for m in states if m["type"] == "hypothesis_state"]) == 2
+        ws.send_json({"type": "hypothesis_dictate", "on": False})
+        assert ws.receive_json()["batch"] is False
+    assert [e["hypothesis_id"] for e in kinds(tmp_path, "hypothesis")] == ["h1", "h2"]
+    assert [e["on"] for e in kinds(tmp_path, "dictate")] == [True, False]

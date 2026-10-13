@@ -64,10 +64,14 @@ _PHANTOMS = {
 }
 
 
+# A segment that is only a hesitation noise carries no reasoning ("Um...", "Umm", "hmm").
+_FILLER = re.compile(r"^(?:u+m+|u+h+|h+m+|m+h*m+|e+r+m*|a+h+)$")
+
+
 def clean_text(text: str) -> str:
-    """Normalize whitespace and drop known Whisper silence hallucinations ('' if nothing real)."""
+    """Normalize whitespace; drop Whisper silence hallucinations and lone hesitations ('' if nothing)."""
     text = re.sub(r"\s+", " ", text).strip()
     bare = re.sub(r"[^\w\[\]() ]", "", text).strip().lower()
-    if not bare or bare in _PHANTOMS:
+    if not bare or bare in _PHANTOMS or _FILLER.match(bare):
         return ""
     return text

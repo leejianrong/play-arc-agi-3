@@ -46,8 +46,9 @@ carry on. Tuning: `STT_MODEL` (default `small.en`; `base.en` is about 3x faster)
 
 While annotating: `1`-`5` set the phase (observe, probe, plan, execute, reflect; it starts at observe and
 flips to probe when you first touch the game), `T` opens the note box (Enter saves, Esc cancels), `M` mutes
-the mic (and its recording), `H` starts a hypothesis (say or type it next; `Y` confirmed, `N` refuted; click a chip
-to reselect it), and **end session** stops cleanly and shows where the files went. Held-out
+the mic (and its recording), hypotheses live in a list under the grid: type one and press Enter (`H` jumps to the box, Esc returns to
+the game; add several in a row) or turn on **dictate** (`V`) so each sentence you say becomes one. Mark each row
+**true / false** with its buttons whenever you know, in any order (`Y`/`N` mark the one marked "testing"), and **end session** stops cleanly and shows where the files went. Held-out
 games (see `data_policy.json`) are tagged in the picker and are played without annotation. Measurements: `docs/STT-MEASUREMENTS.md`; design: ADR-0006 to ADR-0009.
 
 ## Browser tests
