@@ -233,6 +233,56 @@
     #transcript .steps { flex: none; font-family: var(--mono); font-size: 11px; color: var(--fg-dim); padding-top: 2px; }
     #transcript .interim { min-height: 1.3em; color: var(--fg-dim); font-style: italic; }
 
+    #transcript .mute { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
+    #transcript .mute.is-muted { color: var(--danger-fg); font-weight: 600; }
+    #transcript .phases { display: flex; gap: 4px; flex-wrap: wrap; }
+    .phase-chip {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--ink);
+      color: var(--fg-dim);
+      border: 1px solid var(--line);
+      padding: 3px 8px;
+      cursor: pointer;
+    }
+    .phase-chip:hover { background: var(--panel-hover); }
+    .phase-chip.is-current { color: var(--ink); background: #e8c46a; border-color: #e8c46a; font-weight: 600; }
+    #transcript .note {
+      background: var(--ink);
+      color: var(--fg);
+      border: 1px solid var(--line);
+      font-family: var(--sans);
+      font-size: 13px;
+      padding: 7px 9px;
+    }
+    #transcript .note:focus { outline: 2px solid #e8c46a; outline-offset: 0; }
+    #transcript .final.typed span:last-child { color: #e8c46a; }
+
+    #notice {
+      display: none;
+      background: #12281d;
+      color: #a8e6c3;
+      padding: 8px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      width: 100%;
+      max-width: 640px;
+      word-break: break-all;
+    }
+
+    #end {
+      background: var(--panel);
+      color: var(--fg-dim);
+      border: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 3px 10px;
+      cursor: pointer;
+    }
+    #end:hover { color: var(--fg); background: var(--panel-hover); }
+
+    .tag.heldout { color: var(--danger-fg); }
+
     #hint {
       font-family: var(--mono);
       font-size: 11px;
@@ -262,6 +312,7 @@
   </div>
 
   <div id="error"></div>
+  <div id="notice"></div>
 
   <div id="picker">
     <p class="empty">Loading games…</p>
@@ -271,18 +322,22 @@
     <div id="header">
       <span id="state"></span>
       <span id="levels"></span>
+      <button id="end" type="button" title="Stop the mic, save the last sentence, and return to the game list">end session</button>
     </div>
     <canvas id="grid" width="512" height="512"></canvas>
     <div id="transcript" data-testid="transcript">
       <div class="head">
         <span data-role="status">idle</span>
         <span class="meter"><span class="meter-fill" data-role="meter-fill"></span></span>
+        <span class="mute" data-role="mute">mic on (M)</span>
       </div>
+      <div class="phases" data-role="phases" title="Keys 1-5 set the phase. It starts at observe and flips to probe when you first touch the game."></div>
       <div class="banner" data-role="banner"></div>
       <div class="finals" data-role="finals"></div>
       <div class="interim" data-role="interim"></div>
+      <input class="note" data-role="note" type="text" maxlength="500" placeholder="press T to type a note, Enter to save, Esc to cancel" autocomplete="off" />
     </div>
-    <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset</p>
+    <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset<br>Annotating: 1-5 = phase · T = type a note · M = mute mic</p>
   </div>
 
   <script type="module" src="/static/app.js"></script>

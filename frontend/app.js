@@ -2,6 +2,7 @@ import { keyToActionId, clickToGridCoords } from "/static/input_mapping.js";
 import { PALETTE } from "/static/palette.js";
 import { swatchGrid } from "/static/identicon.js";
 import { createAnnotationUI } from "/static/annotation_ui.js";
+import { annotationHotkey, isTypingTarget } from "/static/hotkeys.js";
 
 const pickerEl = document.getElementById("picker");
 const playEl = document.getElementById("play");
@@ -13,13 +14,20 @@ const errorEl = document.getElementById("error");
 const recordModeEl = document.getElementById("record-mode");
 const controlsEl = document.querySelector(".controls");
 const annotateEl = document.getElementById("annotate");
-const annotation = createAnnotationUI(document.getElementById("transcript"));
+const noticeEl = document.getElementById("notice");
+const endEl = document.getElementById("end");
+const annotation = createAnnotationUI(document.getElementById("transcript"), {
+  sendNote: (text) => ws.send(JSON.stringify({ type: "note", text })),
+  sendPhase: (phase) => ws.send(JSON.stringify({ type: "phase", phase })),
+});
 
 const CELL_PX = canvas.width / 64;
 const SWATCH_CELL_PX = 8;
 
 let availableActions = [];
 let errorTimer = null;
+let noticeTimer = null;
+let frameSeen = false; // distinguishes 'start failed' from 'error mid-game'
 
 const ws = new WebSocket(`ws://${location.host}/ws/session`);
 
@@ -31,8 +39,17 @@ ws.addEventListener("message", (event) => {
     renderFrame(message.frame_data);
   } else if (message.type === "annotation") {
     annotation.start(message.session_id);
+  } else if (message.type === "phase") {
+    annotation.setPhase(message.phase);
+  } else if (message.type === "note_saved") {
+    annotation.addNote(message);
+  } else if (message.type === "ended") {
+    showPicker();
+    const files = [message.recording, message.annotations, message.audio].filter(Boolean);
+    if (files.length) showNotice(`Session saved in recordings/: ${files.join("  \u00b7  ")}`);
   } else if (message.type === "error") {
     showError(message.message);
+    if (!frameSeen) showPicker(); // the game never started (e.g. annotation refused)
   }
 });
 
@@ -65,7 +82,8 @@ function buildPickerRow(game) {
   const row = document.createElement("button");
   row.className = "picker-row";
   row.type = "button";
-  row.addEventListener("click", () => startGame(game.game_id));
+  const heldOut = game.data_use === "heldout";
+  row.addEventListener("click", () => startGame(game.game_id, heldOut));
 
   row.appendChild(buildSwatch(game.game_id));
 
@@ -87,6 +105,13 @@ function buildPickerRow(game) {
     pill.className = "tag";
     pill.textContent = tag;
     pill.style.color = PALETTE[1 + (hashTag(tag) % 9)];
+    meta.appendChild(pill);
+  }
+  if (heldOut) {
+    const pill = document.createElement("span");
+    pill.className = "tag heldout";
+    pill.textContent = "held-out";
+    pill.title = "Held out for evaluation: you can play it, but it is never annotated (data_policy.json)";
     meta.appendChild(pill);
   }
   text.appendChild(meta);
@@ -117,16 +142,38 @@ function buildSwatch(gameId) {
   return swatch;
 }
 
-function startGame(gameId) {
-  ws.send(
-    JSON.stringify({ type: "start", game_id: gameId, record: recordModeEl.value, annotate: annotateEl.checked })
-  );
+function startGame(gameId, heldOut = false) {
+  const annotate = annotateEl.checked && !heldOut;
+  if (annotateEl.checked && heldOut) {
+    showNotice("Held-out game: playing without annotation so the evaluation set stays clean.");
+  }
+  frameSeen = false;
+  ws.send(JSON.stringify({ type: "start", game_id: gameId, record: recordModeEl.value, annotate }));
   pickerEl.style.display = "none";
   controlsEl.style.display = "none";
   playEl.style.display = "flex";
 }
 
+function showPicker() {
+  annotation.stop();
+  playEl.style.display = "none";
+  pickerEl.style.display = "flex";
+  controlsEl.style.display = "flex";
+  frameSeen = false;
+}
+
+endEl.addEventListener("click", async () => {
+  endEl.disabled = true;
+  try {
+    await annotation.finish(); // let the server write the sentence in progress first
+    ws.send(JSON.stringify({ type: "end" }));
+  } finally {
+    endEl.disabled = false;
+  }
+});
+
 function renderFrame(frameData) {
+  frameSeen = true;
   availableActions = frameData.available_actions;
   stateEl.textContent = `state: ${frameData.state}`;
   levelsEl.textContent = `levels: ${frameData.levels_completed}/${frameData.win_levels}`;
@@ -152,6 +199,17 @@ function sendAction(actionId, x, y) {
 
 window.addEventListener("keydown", (event) => {
   if (playEl.style.display === "none") return;
+  if (isTypingTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (annotation.active) {
+    const hotkey = annotationHotkey(event.key);
+    if (hotkey) {
+      event.preventDefault();
+      if (hotkey.kind === "phase") ws.send(JSON.stringify({ type: "phase", phase: hotkey.phase }));
+      else if (hotkey.kind === "mute") annotation.toggleMute();
+      else if (hotkey.kind === "note") annotation.focusNote();
+      return;
+    }
+  }
   const actionId = keyToActionId(event.key);
   if (actionId === null) return;
   event.preventDefault();
@@ -174,4 +232,11 @@ function showError(message) {
   errorEl.style.display = "block";
   clearTimeout(errorTimer);
   errorTimer = setTimeout(() => (errorEl.style.display = "none"), 6000);
+}
+
+function showNotice(message) {
+  noticeEl.textContent = message;
+  noticeEl.style.display = "block";
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => (noticeEl.style.display = "none"), 20000);
 }

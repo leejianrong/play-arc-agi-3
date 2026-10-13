@@ -19,6 +19,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .annotations.phases import PHASES, PhaseChange
+from .annotations.policy import load_policy
 from .annotations.session import AnnotationSession
 from .config import api_key_from_env
 from .game_sources.arcade import ArcadeGameSource, close_arcade, list_games, make_arcade
@@ -48,6 +50,19 @@ async def get_transcriber() -> Transcriber:
             await asyncio.to_thread(candidate.load)  # raises TranscriberUnavailable
             _transcriber = candidate
         return _transcriber
+
+
+def policy_from_env():
+    return load_policy()
+
+
+def _phase_message(change: PhaseChange) -> dict:
+    return {"type": "phase", "phase": change.phase, "previous": change.previous, "reason": change.reason}
+
+
+def _note_wire(event: dict) -> dict:
+    keys = ("event_id", "text", "step_at_end", "phase")
+    return {k: event[k] for k in keys}
 
 
 async def _warm_transcriber() -> None:
@@ -84,8 +99,14 @@ async def session(websocket: WebSocket) -> None:
 
     try:
         arcade = await make_arcade(api_key)
+        policy = policy_from_env()
         await websocket.send_json(
-            {"type": "games", "games": [asdict(g) for g in list_games(arcade)]}
+            {
+                "type": "games",
+                "games": [
+                    {**asdict(g), "data_use": policy.classify(g.game_id)} for g in list_games(arcade)
+                ],
+            }
         )
     except Exception as exc:
         await websocket.send_json({"type": "error", "message": f"failed to load games catalog: {exc}"})
@@ -106,6 +127,9 @@ async def session(websocket: WebSocket) -> None:
                     annotate = bool(message.get("annotate"))
                     if annotate and record_mode == "off":
                         record_mode = "lean"  # ADR-0007: annotations need a recording to align to
+                    data_use = policy.classify(game_id)
+                    if annotate and data_use == "heldout":
+                        raise GameSourceError(policy.refusal(game_id))  # ADR-0009; checked first
                     if annotation is not None:
                         annotation.close()
                         annotation = None
@@ -127,6 +151,7 @@ async def session(websocket: WebSocket) -> None:
                             record_mode,
                             stt=os.environ.get("STT_MODEL", "small.en"),
                             keep_audio=os.environ.get("KEEP_AUDIO", "1") != "0",
+                            data_use=data_use,
                         )
                     frame_data = await game_source.reset()
                     if recorder is not None:
@@ -151,9 +176,40 @@ async def session(websocket: WebSocket) -> None:
                     )
                     if recorder is not None:
                         recorder.append(frame_data)
+                    change = None
                     if annotation is not None and recorder is not None:
-                        annotation.mark_step(recorder.step_count - 1, frame_data.levels_completed)
+                        change = annotation.mark_step(
+                            recorder.step_count - 1, frame_data.levels_completed, is_action=True
+                        )
                     await websocket.send_json({"type": "frame", "frame_data": frame_data.to_wire()})
+                    if change is not None:
+                        await websocket.send_json(_phase_message(change))
+
+                elif msg_type == "note":
+                    if annotation is None:
+                        raise GameSourceError("notes need an annotated session")
+                    text = str(message.get("text", "")).strip()
+                    if text:
+                        event = annotation.note(text)
+                        await websocket.send_json({"type": "note_saved", **_note_wire(event)})
+
+                elif msg_type == "phase":
+                    if annotation is None:
+                        raise GameSourceError("phases need an annotated session")
+                    if message.get("phase") not in PHASES:
+                        raise GameSourceError(f"unknown phase {message.get('phase')!r}")
+                    change = annotation.set_phase(message["phase"])
+                    if change is not None:
+                        await websocket.send_json(_phase_message(change))
+
+                elif msg_type == "end":
+                    saved = {"recording": recorder.path.name if recorder is not None else None}
+                    if annotation is not None:
+                        saved["annotations"] = annotation.path.name
+                        saved["audio"] = annotation.audio_path.name if annotation.keep_audio else None
+                        annotation.close()
+                    annotation, recorder, game_source = None, None, None
+                    await websocket.send_json({"type": "ended", **saved})
 
                 else:
                     await websocket.send_json(

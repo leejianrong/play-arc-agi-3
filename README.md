@@ -42,7 +42,12 @@ make run-annotate    # run + the optional faster-whisper extra (first run downlo
 Use `make run-annotate`, not `make run`: plain `uv sync` removes the speech extra. Your browser asks for
 mic permission on first use. If the mic or model is unavailable you get a banner and play and recording
 carry on. Tuning: `STT_MODEL` (default `small.en`; `base.en` is about 3x faster), `STT_SILENCE_MS`
-(default 1000), `KEEP_AUDIO=0`. Measurements: `docs/STT-MEASUREMENTS.md`; design: ADR-0006 to ADR-0009.
+(default 1000), `KEEP_AUDIO=0`.
+
+While annotating: `1`-`5` set the phase (observe, probe, plan, execute, reflect; it starts at observe and
+flips to probe when you first touch the game), `T` opens the note box (Enter saves, Esc cancels), `M` mutes
+the mic (and its recording), and **end session** stops cleanly and shows where the files went. Held-out
+games (see `data_policy.json`) are tagged in the picker and are played without annotation. Measurements: `docs/STT-MEASUREMENTS.md`; design: ADR-0006 to ADR-0009.
 
 ## Configuration
 

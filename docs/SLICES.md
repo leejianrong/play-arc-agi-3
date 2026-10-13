@@ -209,6 +209,10 @@ re-choosing the engine.
 
 ## V4: Typed notes, phases, and the data-use policy
 
+**Status (2026-10-14): built** (ARC-71 to ARC-74, plus ARC-82 end-session). Verified in headless
+Chromium against the real app with a fake mic: note box, phase chips and auto-advance, mute, held-out
+refusal, end session. Held-out games stay playable but unannotated.
+
 **Delivers:** R10, R11 (phases), R14
 
 **Build plan**
