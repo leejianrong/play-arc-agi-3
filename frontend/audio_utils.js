@@ -85,3 +85,9 @@ export class Chunker {
     return ready;
   }
 }
+
+// Mic level (RMS, 0..1) -> 0..100 bar width. Square-root scaled because quiet speech sits around
+// 0.01-0.05 RMS and a linear bar barely moves; 0.2 RMS (loud) fills it.
+export function meterPercent(level) {
+  return Math.max(0, Math.min(100, Math.round(Math.sqrt(Math.max(0, level)) * 220)));
+}

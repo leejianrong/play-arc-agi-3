@@ -208,6 +208,7 @@
     }
 
     #transcript .meter {
+      display: block;
       flex: none;
       width: 80px;
       height: 6px;
@@ -215,7 +216,8 @@
       border: 1px solid var(--line);
     }
 
-    #transcript .meter-fill { height: 100%; width: 0%; background: #4cc38a; transition: width 60ms linear; }
+    /* display:block matters: an inline span ignores width/height, so the bar was invisible. */
+    #transcript .meter-fill { display: block; height: 100%; width: 0%; background: #4cc38a; transition: width 60ms linear; }
 
     #transcript .banner {
       display: none;

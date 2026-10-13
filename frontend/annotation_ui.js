@@ -1,7 +1,7 @@
 // Live speech capture + transcript panel (ADR-0006). Owns the mic, the /ws/audio socket and the
 // DOM of the transcript panel. Every failure here is reported in the panel and never thrown into
 // the game: play, recording and (later) typed notes must keep working without a mic or model.
-import { Chunker, Resampler, TAG_OPUS, TAG_PCM, TARGET_RATE, floatToPcm16, rms, tagFrame } from "/static/audio_utils.js";
+import { Chunker, Resampler, TAG_OPUS, TAG_PCM, TARGET_RATE, floatToPcm16, meterPercent, rms, tagFrame } from "/static/audio_utils.js";
 
 export function createAnnotationUI(panelEl) {
   const statusEl = panelEl.querySelector("[data-role=status]");
@@ -78,7 +78,7 @@ export function createAnnotationUI(panelEl) {
       const chunker = new Chunker();
       node.port.onmessage = (event) => {
         const block = event.data;
-        meterEl.style.width = `${Math.min(100, Math.round(rms(block) * 400))}%`;
+        meterEl.style.width = `${meterPercent(rms(block))}%`;
         for (const chunk of chunker.push(resampler.process(block))) {
           if (socket && socket.readyState === WebSocket.OPEN) socket.send(tagFrame(TAG_PCM, floatToPcm16(chunk)));
         }

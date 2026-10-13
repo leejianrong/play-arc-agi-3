@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Chunker, Resampler, TAG_PCM, floatToPcm16, rms, tagFrame } from "../../frontend/audio_utils.js";
+import { Chunker, Resampler, TAG_PCM, floatToPcm16, meterPercent, rms, tagFrame } from "../../frontend/audio_utils.js";
 
 test("resampler 48k -> 16k yields one output per three inputs, averaged", () => {
   const out = new Resampler(48000, 16000).process(Float32Array.from([0.3, 0.3, 0.3, 0.6, 0.6, 0.6]));
@@ -47,4 +47,12 @@ test("chunker releases fixed-size chunks and keeps the remainder", () => {
   assert.equal(out.length, 2);
   assert.ok(out.every((chunk) => chunk.length === 4));
   assert.equal(c.length, 1);
+});
+
+test("meterPercent is visible for quiet speech, clamped, and zero for silence", () => {
+  assert.equal(meterPercent(0), 0);
+  assert.ok(meterPercent(0.01) >= 15, "quiet speech should be clearly visible");
+  assert.ok(meterPercent(0.05) > meterPercent(0.01));
+  assert.equal(meterPercent(1), 100);
+  assert.equal(meterPercent(-1), 0);
 });
