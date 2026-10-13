@@ -139,3 +139,202 @@ time — if not, V2 is simply skipped).
   custom env's `metadata.json` is malformed (skipped, not a crash) —
   `_scan_for_environments` in `arc_agi` already handles this; confirm our
   own picker endpoint doesn't choke on what it returns.
+
+# Annotation milestone (V3-V6)
+
+Added 2026-10-13. V3 confronts the riskiest unknown: whether live speech from
+a (probably Windows-side) browser can reach a local Whisper process, come back
+fast enough to be useful, and line up with game steps. Decisions: ADR-0006
+through ADR-0009.
+
+## V3: Speak while playing, see live text, saved aligned to steps
+
+**Status (2026-10-14): built** (ARC-65 to ARC-70). Verified in headless Chromium with a fake mic
+playing real speech against a real game; numbers in `docs/STT-MEASUREMENTS.md`. Real-microphone
+use on this machine is still to be tried by hand.
+
+**Delivers:** R9, R12 (partial: sidecar and alignment, no frame hash yet)
+
+**Build plan**
+
+1. Add the optional `stt` dependency group and a `Transcriber` protocol with a
+   fake implementation and a `faster-whisper` implementation (`small.en`).
+2. Browser: `audio_worklet.js` captures the mic, downsamples to 16 kHz mono
+   PCM16, and streams binary frames on `/ws/audio` with a session-relative
+   offset; `MediaRecorder` keeps the opus stream for retention.
+3. Backend: `/ws/audio` route tied to the active session; VAD cuts utterances;
+   interim text every ~1.5 s while an utterance is open, a final on silence.
+4. `AnnotationWriter` appends `session_start` (with `data_use: "unclassified"`
+   until V4 adds the policy) and `speech` events to the sidecar, with `step_at_start`, `step_at_end` and `audio_offset_ms`; write
+   the audio file beside it.
+5. Annotate toggle in the picker (default off, promotes Off to Lean). Live
+   transcript panel with interim vs final styling, mic meter, error banner when
+   the mic or model fails (session continues).
+6. Measure and record: time from end of speech to final text, interim lag, and
+   junk-segment rate on key-clatter, on CPU and on GPU if available.
+
+**Demo:** Start an annotated session, say "I think the blue square is the
+player" before moving, press a few keys, say "prediction held". Live text
+appears beside the grid; the sidecar has two `speech` events whose step ranges
+match the moves; the audio file plays back.
+
+**Rests on assumptions:** Q31 (annotated sessions at least Lean; audio kept).
+If the mic cannot be captured from the browser in this environment, typed notes
+(V4) become the primary path and this slice's result is the evidence for
+re-choosing the engine.
+
+### Test plan
+
+#### End-to-end
+
+- A real spoken sentence produces a final transcript whose wording matches
+  within a human-judged tolerance, and the sidecar event's step range brackets
+  the actions taken while speaking.
+- Killing the STT process mid-session shows a banner; play, recording and typed
+  notes keep working.
+
+#### Integration
+
+- Feeding a recorded PCM fixture through `/ws/audio` with a fake `Transcriber`
+  yields the expected interim then final messages and one `speech` event.
+- A `speech` event spanning two game steps records `step_at_start` and
+  `step_at_end` correctly.
+- With annotate on and record Off, the session starts as Lean.
+
+#### Unit
+
+- VAD segmentation on silence, speech and clatter fixtures yields the expected
+  utterance boundaries.
+- `AnnotationWriter` writes valid, ordered JSONL with `schema_version: 1`.
+
+## V4: Typed notes, phases, and the data-use policy
+
+**Delivers:** R10, R11 (phases), R14
+
+**Build plan**
+
+1. Typed-note box: `T` focuses, Enter sends a `text` event, Esc cancels; global
+   hotkeys are ignored while it has focus.
+2. Phase state machine: `observe` at each level start (session start, and when
+   `levels_completed` increases); first game action in `observe` auto-switches
+   to `probe`; keys `1-5` set the others; every change is a `phase_change`
+   event and every later event carries the current phase. Phase chip in the UI.
+3. `data_policy.json` with the held-out list from ADR-0009; classify each game
+   as `train-ok` (not in the public catalog), `reference-only`, or `heldout`;
+   write `data_use` into `session_start`; picker disables annotation for
+   `heldout` games with an explanation, while plain play still works.
+4. `M` mute key and a `mute` event.
+
+**Demo:** Start an annotated session on a held-out game (annotation toggle is
+disabled, play works), then on a normal game: type a note, watch the phase chip
+go OBSERVE to PROBE on the first move, press `3` for PLAN, and see all of it in
+the sidecar with correct phases and `data_use: reference-only`.
+
+**Rests on assumptions:** Q32 (hotkeys), Q33 (held-out list is arbitrary and
+may need editing first).
+
+### Test plan
+
+#### End-to-end
+
+- Typing `T`, a note, Enter does not move the player or trigger ACTION5; after
+  sending, arrow keys move again.
+- Clearing a level returns the phase to `observe` and logs the change.
+
+#### Integration
+
+- A `start` with annotate on a held-out game is rejected with a structured
+  error; with annotate off it plays normally.
+- Phase and note events appear in the sidecar in the order they happened,
+  sharing the recording's clock.
+
+#### Unit
+
+- Phase machine: auto-advance only from `observe`, level-clear reset, manual
+  overrides, and no automatic transition out of `probe`.
+- `data_policy.json` classification for held-out, public and custom game IDs,
+  and a malformed policy file falls back to refusing annotation.
+- Keymap handler ignores hotkeys while a text input is focused.
+
+## V5: Hypothesis tags and the reflect step
+
+**Delivers:** R11 (hypotheses)
+
+**Build plan**
+
+1. Hypothesis registry with stable per-session IDs (`h1`, `h2`, ...); `H`
+   opens one and the next utterance or note becomes its statement.
+2. `Y` and `N` set the selected hypothesis to confirmed or refuted, emitting
+   `hypothesis_verdict` with `step_at_end`; the selected hypothesis ID is
+   attached to subsequent events.
+3. Hypothesis chips panel (status colours, click to select, defaults to the
+   latest open one).
+4. On level clear, prompt (non-blocking) for the REFLECT phase and show it in
+   the chip.
+
+**Demo:** Say "H, the green block opens the door", move, say "it did not", press
+`N`; the chip turns refuted, and the sidecar shows the hypothesis, its tagged
+speech, and the verdict linked to the step where it died.
+
+**Rests on assumptions:** none new.
+
+### Test plan
+
+#### End-to-end
+
+- Open two hypotheses, confirm one and refute the other; the chips and
+  sidecar both show the right final statuses.
+
+#### Integration
+
+- Events emitted while a hypothesis is selected carry its `hypothesis_id`; after
+  a verdict, the selection moves to the next open hypothesis or to none.
+
+#### Unit
+
+- Hypothesis registry: stable IDs, one verdict at most per hypothesis unless
+  explicitly reopened, no cross-session leakage.
+
+## V6: Timeline CLI and replay verification
+
+**Delivers:** R12 (frame hash), R13
+
+**Build plan**
+
+1. `Recorder` computes `frame_sha256` for every step, including lean mode, and
+   moves to `schema_version: 3`; readers keep accepting v1 and v2.
+2. `make timeline FILE=<recording>`: merge recording and sidecar into a
+   markdown timeline per level (phase, thoughts, hypotheses with verdicts,
+   actions, level results).
+3. `--verify`: replay the actions against the same game locally and compare
+   every `frame_sha256`; report the first divergence.
+4. Document the fix-up workflow: edit the annotations file by hand; the CLI
+   never rewrites it. Update `AGENTS.md` with the new modules and the
+   gitignored `recordings/` audio.
+
+**Demo:** Run the timeline on the V5 demo session: a readable page showing the
+thinking, the probes and the verdicts; `--verify` says all N hashes matched. Edit
+one transcript word in the sidecar and see it reflected on the next run.
+
+**Rests on assumptions:** ADR-0005's determinism claim. A failed `--verify` on
+any real game is evidence it is wrong for that game.
+
+### Test plan
+
+#### End-to-end
+
+- A session recorded on a real fixture game verifies cleanly; changing one
+  action in the recording makes `--verify` fail at that step.
+
+#### Integration
+
+- The timeline for a session with speech spanning several steps orders thoughts
+  before the steps they led to, using `step_at_end`.
+- v1, v2 and v3 recordings all load; a missing sidecar produces a recording-only
+  timeline, not an error.
+
+#### Unit
+
+- `frame_sha256` is stable for identical frames and differs for a one-cell
+  change.
+- Timeline rendering handles truncated final JSONL lines and unknown event kinds.
