@@ -247,6 +247,45 @@
     }
     .phase-chip:hover { background: var(--panel-hover); }
     .phase-chip.is-current { color: var(--ink); background: #e8c46a; border-color: #e8c46a; font-weight: 600; }
+    #transcript .hypotheses { display: flex; gap: 4px; flex-wrap: wrap; min-height: 0; }
+    .hyp-chip {
+      font-family: var(--mono);
+      font-size: 11px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      background: var(--ink);
+      color: var(--fg);
+      border: 1px solid var(--line);
+      border-left-width: 4px;
+      padding: 3px 8px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .hyp-chip.open { border-left-color: #e8c46a; }
+    .hyp-chip.confirmed { border-left-color: #4cc38a; }
+    .hyp-chip.refuted { border-left-color: #e5484d; text-decoration: line-through; color: var(--fg-dim); }
+    .hyp-chip.is-selected { outline: 2px solid var(--fg-dim); outline-offset: 1px; }
+    .hyp-chip.pending { border-left-color: #e8c46a; color: #e8c46a; font-style: italic; cursor: default; }
+    #transcript .prompt {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      background: #1c2233;
+      color: #b9c8ff;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    #transcript .prompt button {
+      margin-left: auto;
+      background: transparent;
+      color: inherit;
+      border: 1px solid currentColor;
+      font-family: var(--mono);
+      font-size: 11px;
+      cursor: pointer;
+    }
     #transcript .note {
       background: var(--ink);
       color: var(--fg);
@@ -332,12 +371,17 @@
         <span class="mute" data-role="mute">mic on (M)</span>
       </div>
       <div class="phases" data-role="phases" title="Keys 1-5 set the phase. It starts at observe and flips to probe when you first touch the game."></div>
+      <div class="hypotheses" data-role="hypotheses" title="H = state a hypothesis (say or type it next). Y = confirmed, N = refuted. Click a chip to select it."></div>
+      <div class="prompt" data-role="prompt">
+        <span data-role="prompt-text"></span>
+        <button type="button" data-role="prompt-dismiss" tabindex="-1">dismiss</button>
+      </div>
       <div class="banner" data-role="banner"></div>
       <div class="finals" data-role="finals"></div>
       <div class="interim" data-role="interim"></div>
       <input class="note" data-role="note" type="text" maxlength="500" placeholder="press T to type a note, Enter to save, Esc to cancel" autocomplete="off" />
     </div>
-    <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset<br>Annotating: 1-5 = phase · T = type a note · M = mute mic</p>
+    <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset<br>Annotating: 1-5 = phase · H = hypothesis (then Y confirmed / N refuted) · T = type a note · M = mute mic</p>
   </div>
 
   <script type="module" src="/static/app.js"></script>

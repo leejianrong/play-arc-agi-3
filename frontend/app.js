@@ -19,6 +19,7 @@ const endEl = document.getElementById("end");
 const annotation = createAnnotationUI(document.getElementById("transcript"), {
   sendNote: (text) => ws.send(JSON.stringify({ type: "note", text })),
   sendPhase: (phase) => ws.send(JSON.stringify({ type: "phase", phase })),
+  sendHypothesisSelect: (id) => ws.send(JSON.stringify({ type: "hypothesis_select", hypothesis_id: id })),
 });
 
 const CELL_PX = canvas.width / 64;
@@ -41,6 +42,10 @@ ws.addEventListener("message", (event) => {
     annotation.start(message.session_id);
   } else if (message.type === "phase") {
     annotation.setPhase(message.phase);
+  } else if (message.type === "hypothesis_state") {
+    annotation.setHypotheses(message);
+  } else if (message.type === "level_cleared") {
+    annotation.showLevelCleared(message.level);
   } else if (message.type === "note_saved") {
     annotation.addNote(message);
   } else if (message.type === "ended") {
@@ -207,6 +212,10 @@ window.addEventListener("keydown", (event) => {
       if (hotkey.kind === "phase") ws.send(JSON.stringify({ type: "phase", phase: hotkey.phase }));
       else if (hotkey.kind === "mute") annotation.toggleMute();
       else if (hotkey.kind === "note") annotation.focusNote();
+      else if (hotkey.kind === "hypothesis") ws.send(JSON.stringify({ type: "hypothesis_open" }));
+      else if (hotkey.kind === "verdict") {
+        ws.send(JSON.stringify({ type: "hypothesis_verdict", verdict: hotkey.verdict }));
+      }
       return;
     }
   }

@@ -62,6 +62,13 @@ non-RESET action once a game is already `WIN`/`GAME_OVER` — that's normal, not
 failure. `ArcadeGameSource` handles this by reusing the last real frame
 (`_last_frame`); don't reintroduce a check that treats an empty frame as an error.
 
+### Verifying UI changes
+
+Unit and websocket tests cannot see CSS, focus or layout bugs (the V3 mic meter passed every test while rendering
+0px wide). After any frontend or websocket-flow change, run `make e2e` (headless Chromium, fake mic, real app; see
+`scripts/e2e.py`) and add a flow or check for what you changed. Assert on rendered geometry/visibility and on files
+on disk, not only DOM state. `STT_ENGINE=fake` and `ARC_ENVIRONMENTS_DIR` exist for that script.
+
 ### Data that must never be committed
 
 - `.env` (`ARC_API_KEY`) — never log it, never write it into a recording, never

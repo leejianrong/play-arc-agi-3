@@ -23,16 +23,21 @@ def test_a_non_action_frame_never_advances():
     assert m.on_frame(False, 0, 10) is None and m.phase == "observe"
 
 
-@pytest.mark.parametrize("phase", ["plan", "execute", "reflect", "observe"])
-def test_actions_do_not_leave_a_manually_chosen_phase(phase):
+@pytest.mark.parametrize("phase", ["plan", "execute"])
+def test_actions_do_not_leave_plan_or_execute(phase):
     m = PhaseMachine()
-    m.set("plan", 10)
-    if phase != "plan":
-        m.set(phase, 20)
-    m.on_frame(True, 0, 30)
-    expected = "observe" if phase == "observe" else phase
-    # In observe an action auto-advances; in any declared phase it must not move.
-    assert m.phase == ("probe" if expected == "observe" else expected)
+    m.set(phase, 10)
+    assert m.on_frame(True, 0, 30) is None
+    assert m.phase == phase
+
+
+@pytest.mark.parametrize("phase", ["observe", "reflect"])
+def test_first_action_leaves_observe_and_reflect_for_probe(phase):
+    # Reflect is between-level talk: touching the game ends it, so it can't strand the label.
+    m = PhaseMachine()
+    m.set(phase, 10)
+    change = m.on_frame(True, 0, 30)
+    assert (change.phase, change.reason) == ("probe", "auto_first_action")
 
 
 def test_level_clear_returns_to_observe_and_beats_the_auto_probe():

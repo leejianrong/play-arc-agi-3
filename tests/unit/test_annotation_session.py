@@ -69,3 +69,56 @@ def test_registry_lookup_and_close(tmp_path):
     assert get_session(s.session_id) is s
     s.close()
     assert get_session(s.session_id) is None
+
+
+def test_h_then_note_creates_hypothesis_event_linked_to_its_source(tmp_path):
+    s = make(tmp_path)
+    s.mark_step(0, 0)
+    s.toggle_hypothesis()
+    note = s.note("the green block opens the door")
+    evs = events(s)
+    hyp = [e for e in evs if e["kind"] == "hypothesis"]
+    assert len(hyp) == 1
+    assert hyp[0]["hypothesis_id"] == "h1" and hyp[0]["statement"] == "the green block opens the door"
+    assert hyp[0]["source"] == "typed" and hyp[0]["source_event_id"] == note["event_id"]
+    assert note["hypothesis_id"] == "h1"  # the statement is itself filed under the hypothesis
+
+
+def test_verdict_event_links_to_the_step_and_later_events_are_tagged(tmp_path):
+    s = make(tmp_path)
+    s.mark_step(0, 0)
+    s.toggle_hypothesis()
+    s.note("door opens with green")
+    s.mark_step(1, 0, is_action=True)
+    s.mark_step(2, 0, is_action=True)
+    state = s.verdict("refuted")
+    evs = events(s)
+    v = [e for e in evs if e["kind"] == "hypothesis_verdict"][0]
+    assert (v["hypothesis_id"], v["verdict"], v["previous"], v["step_at_end"]) == ("h1", "refuted", "open", 2)
+    assert state["hypotheses"][0]["status"] == "refuted" and state["selected"] is None
+    assert s.note("what now")["hypothesis_id"] is None  # nothing selected after the only one closed
+
+
+def test_speech_is_tagged_with_the_hypothesis_selected_when_it_began(tmp_path):
+    s = make(tmp_path)
+    clock = {"ms": 0}
+    s.now_ms = lambda: clock["ms"]  # scripted time: the order of events is the point of this test
+    s.mark_step(0, 0)
+    s.toggle_hypothesis()
+    clock["ms"] = 100
+    s.note("a")  # h1 selected from t=100
+    clock["ms"] = 300
+    s.verdict("refuted")  # N pressed at t=300, before the sentence below was transcribed
+    late = s.speech("no it did not", start_ms=200, end_ms=250, audio_offset_ms=(0, 50))
+    assert late["hypothesis_id"] == "h1"
+
+
+def test_speech_while_armed_becomes_the_statement(tmp_path):
+    s = make(tmp_path)
+    s.mark_step(0, 0)
+    s.toggle_hypothesis()
+    now = s.now_ms()
+    ev = s.speech("the red thing is the goal", now + 10, now + 900, (0, 890))
+    hyp = [e for e in events(s) if e["kind"] == "hypothesis"][0]
+    assert hyp["source"] == "stt" and hyp["source_event_id"] == ev["event_id"] and ev["hypothesis_id"] == "h1"
+    assert s.hypothesis_state()["pending"] is False

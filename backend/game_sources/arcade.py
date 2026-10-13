@@ -17,6 +17,7 @@ app is that execution is local either way, not which mode got it there.
 from __future__ import annotations
 
 import asyncio
+import os
 
 from arc_agi import Arcade, OperationMode
 from arcengine import FrameDataRaw, GameAction
@@ -77,14 +78,14 @@ def _normalize(
     )
 
 
-async def make_arcade(api_key: str, environments_dir: str = "environment_files") -> Arcade:
+async def make_arcade(api_key: str, environments_dir: str | None = None) -> Arcade:
     """Construct an Arcade for one WebSocket connection, off the event loop
     -- construction fetches the games catalog, a network call."""
     return await asyncio.to_thread(
         Arcade,
         arc_api_key=api_key,
         operation_mode=OperationMode.NORMAL,
-        environments_dir=environments_dir,
+        environments_dir=environments_dir or os.environ.get("ARC_ENVIRONMENTS_DIR", "environment_files"),
     )
 
 
