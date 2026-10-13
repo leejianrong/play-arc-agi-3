@@ -93,8 +93,22 @@ class AnnotationSession:
     def note(self, text: str) -> dict:
         now = self.now_ms()
         step, level = self.step_at(now)
-        captured = self._capture(text, now, step, level)
-        event = self._write(
+        captured = self._capture(text, now, step, level, source="typed")
+        event = self._write_text(text, now, step, level, captured.id if captured else None)
+        self._write_hypothesis(captured, event, "typed", now)
+        return event
+
+    def add_hypothesis(self, text: str) -> dict:
+        """A typed hypothesis, added at once (no need to press H first)."""
+        now = self.now_ms()
+        step, level = self.step_at(now)
+        h = self.hyp.capture(text, now, step, level)
+        event = self._write_text(text, now, step, level, h.id)
+        self._write_hypothesis(h, event, "typed", now)
+        return event
+
+    def _write_text(self, text, now, step, level, hypothesis_id) -> dict:
+        return self._write(
             {
                 "kind": "text",
                 "source": "typed",
@@ -103,12 +117,10 @@ class AnnotationSession:
                 "step_at_end": step,
                 "level": level,
                 "phase": self.phases.phase,
-                "hypothesis_id": captured.id if captured else self.hyp.selected_at(now),
+                "hypothesis_id": hypothesis_id or self.hyp.selected_at(now),
             },
             at_ms=now,
         )
-        self._write_hypothesis(captured, event, "typed", now)
-        return event
 
     def set_muted(self, muted: bool) -> dict | None:
         if muted == self.muted:
@@ -148,7 +160,7 @@ class AnnotationSession:
     ) -> dict:
         start_step, _ = self.step_at(start_ms)
         end_step, level = self.step_at(end_ms)
-        captured = self._capture(text, end_ms, end_step, level, end_ms=end_ms)
+        captured = self._capture(text, end_ms, end_step, level, source="stt")
         event = self._write(
             {
                 "kind": "speech",
@@ -157,7 +169,8 @@ class AnnotationSession:
                 "step_at_start": start_step,
                 "step_at_end": end_step,
                 "level": level,
-                "phase": self.phases.phase_at(start_ms),
+                "phase": self.phases.phase_at(start_ms),  # when the utterance began
+                "phase_at_end": self.phases.phase_at(end_ms),  # you often press the key after saying it
                 "hypothesis_id": captured.id if captured else self.hyp.selected_at(start_ms),
                 "audio_offset_ms": list(audio_offset_ms),
             },
@@ -171,17 +184,32 @@ class AnnotationSession:
     def hypothesis_state(self) -> dict:
         return self.hyp.state()
 
-    def toggle_hypothesis(self) -> dict:
-        self.hyp.toggle_pending(self.now_ms())
+    def arm_hypothesis(self) -> dict:
+        self.hyp.arm(self.now_ms())
+        return self.hyp.state()
+
+    def cancel_hypothesis(self) -> dict:
+        self.hyp.cancel(self.now_ms())
         return self.hyp.state()
 
     def select_hypothesis(self, hypothesis_id: str) -> dict:
         self.hyp.select(hypothesis_id, self.now_ms())
         return self.hyp.state()
 
-    def verdict(self, verdict: str) -> dict:
+    def set_dictate(self, on: bool) -> dict:
         now = self.now_ms()
-        h, previous = self.hyp.verdict(verdict, now)
+        self.hyp.set_batch(on, now)
+        step, level = self.step_at(now)
+        self._write(
+            {"kind": "dictate", "on": on, "step_at_end": step, "level": level,
+             "phase": self.phases.phase},
+            at_ms=now,
+        )
+        return self.hyp.state()
+
+    def verdict(self, verdict: str, hypothesis_id: str | None = None) -> dict:
+        now = self.now_ms()
+        h, previous = self.hyp.verdict(verdict, now, hypothesis_id)
         step, level = self.step_at(now)
         self._write(
             {
@@ -197,8 +225,8 @@ class AnnotationSession:
         )
         return self.hyp.state()
 
-    def _capture(self, text, now_ms, step, level, end_ms=None):
-        if not self.hyp.captures(now_ms if end_ms is None else end_ms):
+    def _capture(self, text, now_ms, step, level, source):
+        if not self.hyp.captures(now_ms, source):
             return None
         return self.hyp.capture(text, now_ms, step, level)
 

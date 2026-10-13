@@ -1,12 +1,15 @@
 """Per-session hypothesis registry (ADR-0008).
 
-`H` arms a pending hypothesis; the next utterance or typed note becomes its statement. `Y`/`N` mark
-the *selected* hypothesis confirmed/refuted. Ids (h1, h2, ...) are stable within one session and
-never cross sessions: each AnnotationSession owns its own registry.
+A hypothesis is a statement you intend to test. You can add them three ways: type one (added at once),
+press `H` and say or type the next one (one-shot), or turn on *dictate* so that every sentence you
+speak becomes a hypothesis until you stop. Each hypothesis then gets a verdict whenever you work it
+out, in any order: `confirmed` (true), `refuted` (false), or `open` again.
 
-Selection is time-stamped so an utterance can be tagged with the hypothesis that was selected when
-it *began*: transcription lags speech by seconds, and "no, it didn't" said about h1 must not be
-filed under h2 just because the player pressed N before the text arrived.
+Ids (h1, h2, ...) are stable within one session and never cross sessions: each AnnotationSession owns
+its own registry. "Selected" means the one you're currently testing; it is only used to tag your
+speech, and is time-stamped so an utterance is tagged with what was selected when it *began*:
+transcription lags speech by seconds, and "no, it didn't" said about h1 must not be filed under h2
+just because the selection moved before the text arrived.
 """
 
 from __future__ import annotations
@@ -14,8 +17,7 @@ from __future__ import annotations
 import bisect
 from dataclasses import asdict, dataclass
 
-Verdict = str  # "confirmed" | "refuted"
-VERDICTS = ("confirmed", "refuted")
+VERDICTS = ("confirmed", "refuted", "open")
 
 
 class HypothesisError(ValueError):
@@ -36,32 +38,52 @@ class HypothesisRegistry:
         self.items: dict[str, Hypothesis] = {}
         self.selected: str | None = None
         self.version = 0  # bumped on every change, so callers can tell if state moved
-        self._pending_since: int | None = None
+        self._armed_since: int | None = None
+        self._batch = False  # dictate mode: keep capturing every spoken sentence
         self._sel_ms: list[int] = [0]
         self._sel_hist: list[str | None] = [None]
 
     @property
     def pending(self) -> bool:
-        return self._pending_since is not None
+        """One-shot capture armed (H pressed), waiting for the next sentence or note."""
+        return self._armed_since is not None and not self._batch
 
-    def toggle_pending(self, now_ms: int) -> bool:
-        """H pressed: arm the next statement, or cancel if already armed. Returns the new state."""
-        self._pending_since = None if self.pending else now_ms
+    @property
+    def batch(self) -> bool:
+        return self._batch
+
+    def arm(self, now_ms: int) -> None:
+        """Capture the next sentence or note as a hypothesis. Idempotent: arming twice never cancels
+        (a toggle did, when a second keypress landed before the first sentence had been transcribed)."""
+        if not self._batch and not self.pending:
+            self._armed_since = now_ms
+            self.version += 1
+
+    def cancel(self, now_ms: int) -> None:
+        """Stop waiting for a statement, and stop dictating."""
+        if self._batch or self.pending:
+            self.set_batch(False, now_ms)
+
+    def set_batch(self, on: bool, now_ms: int) -> None:
+        self._batch = on
+        self._armed_since = now_ms if on else None
         self.version += 1
-        return self.pending
 
-    def captures(self, end_ms: int) -> bool:
-        """Would an utterance/note ending at `end_ms` become the pending statement?
+    def captures(self, end_ms: int, source: str) -> bool:
+        """Would an utterance/note ending at `end_ms` become a hypothesis statement?
 
-        An utterance already in progress when H was pressed still counts (its end is after the press),
-        which is what you want when you hit H halfway through saying the idea.
+        An utterance already in progress when capture was armed still counts (its end is after the
+        press). Dictate mode takes speech only: typed notes stay notes.
         """
-        return self._pending_since is not None and end_ms >= self._pending_since
+        if self._armed_since is None or end_ms < self._armed_since:
+            return False
+        return source == "stt" or not self._batch
 
     def capture(self, statement: str, now_ms: int, step: int, level: int) -> Hypothesis:
         h = Hypothesis(f"h{len(self.items) + 1}", statement, "open", step, level)
         self.items[h.id] = h
-        self._pending_since = None
+        if not self._batch:
+            self._armed_since = None
         self._select(h.id, now_ms)
         return h
 
@@ -70,20 +92,31 @@ class HypothesisRegistry:
             raise HypothesisError(f"unknown hypothesis {hypothesis_id!r}")
         self._select(hypothesis_id, now_ms)
 
-    def verdict(self, verdict: Verdict, now_ms: int) -> tuple[Hypothesis, str]:
-        """Apply a verdict to the selected hypothesis. Returns (hypothesis, previous status).
+    def verdict(
+        self, verdict: str, now_ms: int, hypothesis_id: str | None = None
+    ) -> tuple[Hypothesis, str]:
+        """Give a hypothesis a verdict. Returns (hypothesis, previous status).
 
-        Giving a verdict to an already-closed hypothesis is allowed only because you explicitly
-        selected it (clicked its chip): that is the "explicit reopen" case, and `previous` records it.
+        With no id it applies to the selected hypothesis. Changing an already-closed hypothesis is
+        allowed (you can change your mind); `previous` records what it was. `open` un-decides it.
         """
         if verdict not in VERDICTS:
             raise HypothesisError(f"unknown verdict {verdict!r}")
-        if self.selected is None:
-            raise HypothesisError("no hypothesis selected: press H and state one first")
-        h = self.items[self.selected]
+        target = hypothesis_id or self.selected
+        if target is None:
+            raise HypothesisError("no hypothesis selected: add one first, or click one in the list")
+        if target not in self.items:
+            raise HypothesisError(f"unknown hypothesis {target!r}")
+        h = self.items[target]
         previous, h.status = h.status, verdict
-        open_others = [i for i, x in self.items.items() if x.status == "open" and i != h.id]
-        self._select(open_others[-1] if open_others else None, now_ms)
+        if verdict == "open":
+            self._select(h.id, now_ms)
+        elif h.id == self.selected:
+            # The one you were testing is decided: move on to the latest other open hypothesis.
+            others = [i for i, x in self.items.items() if x.status == "open" and i != h.id]
+            self._select(others[-1] if others else None, now_ms)
+        else:
+            self.version += 1
         return h, previous
 
     def selected_at(self, ms: int) -> str | None:
@@ -95,6 +128,7 @@ class HypothesisRegistry:
             "hypotheses": [asdict(h) for h in self.items.values()],
             "selected": self.selected,
             "pending": self.pending,
+            "batch": self.batch,
         }
 
     def _select(self, hypothesis_id: str | None, now_ms: int) -> None:

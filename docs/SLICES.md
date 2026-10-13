@@ -262,7 +262,8 @@ may need editing first).
 
 ## V5: Hypothesis tags and the reflect step
 
-**Status (2026-10-14): built** (ARC-75 to ARC-77). Verified by `make e2e` in headless Chromium: typed and spoken
+**Status (2026-10-14): built** (ARC-75 to ARC-77), then reworked into a list UI (ARC-83) after the first real
+session, see ADR-0008's revision. Verified by `make e2e` in headless Chromium: typed and spoken
 statements, Y/N/click-to-reopen, struck-through refuted chips, and the level-clear reflect prompt.
 
 **Delivers:** R11 (hypotheses)

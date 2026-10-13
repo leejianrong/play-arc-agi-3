@@ -7,7 +7,10 @@ import { PHASES } from "/static/hotkeys.js";
 
 const FLUSH_TIMEOUT_MS = 8000;
 
-export function createAnnotationUI(panelEl, { sendNote, sendPhase, sendHypothesisSelect }) {
+export function createAnnotationUI(
+  panelEl,
+  { sendNote, sendPhase, sendHypothesisAdd, sendHypothesisSelect, sendVerdict, sendDictate },
+) {
   const statusEl = panelEl.querySelector("[data-role=status]");
   const meterEl = panelEl.querySelector("[data-role=meter-fill]");
   const muteEl = panelEl.querySelector("[data-role=mute]");
@@ -16,7 +19,12 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase, sendHypothesi
   const interimEl = panelEl.querySelector("[data-role=interim]");
   const bannerEl = panelEl.querySelector("[data-role=banner]");
   const noteEl = panelEl.querySelector("[data-role=note]");
-  const hypothesesEl = panelEl.querySelector("[data-role=hypotheses]");
+  const hypListEl = panelEl.querySelector("[data-role=hyp-list]");
+  const hypEmptyEl = panelEl.querySelector("[data-role=hyp-empty]");
+  const hypAddEl = panelEl.querySelector("[data-role=hyp-add]");
+  const dictateEl = panelEl.querySelector("[data-role=dictate]");
+  const dictatingEl = panelEl.querySelector("[data-role=hyp-dictating]");
+  let dictating = false;
   const promptEl = panelEl.querySelector("[data-role=prompt]");
   const promptTextEl = panelEl.querySelector("[data-role=prompt-text]");
   promptEl.querySelector("[data-role=prompt-dismiss]").addEventListener("click", () => hidePrompt());
@@ -43,6 +51,28 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase, sendHypothesi
     phasesEl.appendChild(chip);
     phaseChips.set(phase, chip);
   }
+
+  // The add box stays focused after Enter so several hypotheses can be entered in a row; Esc hands
+  // the keyboard back to the game.
+  hypAddEl.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Enter") {
+      const text = hypAddEl.value.trim();
+      if (text) sendHypothesisAdd(text);
+      hypAddEl.value = "";
+    } else if (event.key === "Escape") {
+      hypAddEl.value = "";
+      hypAddEl.blur();
+    }
+  });
+  dictateEl.addEventListener("click", () => {
+    sendDictate(!dictating);
+    dictateEl.blur();
+  });
+  dictatingEl.querySelector("button").addEventListener("click", () => {
+    sendDictate(false);
+    document.activeElement.blur();
+  });
 
   noteEl.addEventListener("keydown", (event) => {
     event.stopPropagation(); // typing must never reach the game or the hotkeys
@@ -198,6 +228,63 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase, sendHypothesi
     }
   }
 
+  function actionButton(label, className, title, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.tabIndex = -1; // keep keyboard focus on the game
+    button.className = className;
+    button.textContent = label;
+    button.title = title;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation(); // don't also select the row
+      onClick();
+      button.blur(); // Space/Enter must keep acting in the game, not re-press this button
+    });
+    return button;
+  }
+
+  function buildRow(h, selected) {
+    const row = document.createElement("div");
+    row.className = `hyp-row ${h.status}${selected ? " is-selected" : ""}`;
+    row.dataset.hypothesisId = h.id;
+    row.dataset.status = h.status;
+    row.title = `${h.id}, stated at step ${h.step}. Click to mark it as the one you're testing.`;
+    row.addEventListener("click", () => sendHypothesisSelect(h.id));
+
+    const id = document.createElement("span");
+    id.className = "hyp-id";
+    id.textContent = h.id;
+    const text = document.createElement("span");
+    text.className = "hyp-text";
+    text.textContent = h.statement;
+    row.append(id, text);
+
+    const badge = document.createElement("span");
+    const badgeFor = { confirmed: ["TRUE", "true"], refuted: ["FALSE", "false"] }[h.status] ||
+      (selected ? ["testing", "testing"] : null);
+    if (badgeFor) {
+      badge.textContent = badgeFor[0];
+      badge.className = `badge ${badgeFor[1]}`;
+      row.appendChild(badge);
+    }
+
+    const actions = document.createElement("span");
+    actions.className = "hyp-actions";
+    actions.append(
+      actionButton("\u2713 true", `yes${h.status === "confirmed" ? " is-active" : ""}`, "This hypothesis is true", () =>
+        sendVerdict(h.id, "confirmed"),
+      ),
+      actionButton("\u2717 false", `no${h.status === "refuted" ? " is-active" : ""}`, "This hypothesis is false", () =>
+        sendVerdict(h.id, "refuted"),
+      ),
+    );
+    if (h.status !== "open") {
+      actions.append(actionButton("\u21ba", "reset", "Not sure after all: back to open", () => sendVerdict(h.id, "open")));
+    }
+    row.appendChild(actions);
+    return row;
+  }
+
   const ui = {
     get active() {
       return active;
@@ -210,7 +297,8 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase, sendHypothesi
       muted = false;
       renderMuted();
       this.setPhase("observe");
-      this.setHypotheses({ hypotheses: [], selected: null, pending: false });
+      this.setHypotheses({ hypotheses: [], selected: null, pending: false, batch: false });
+      hypAddEl.value = "";
       hidePrompt();
       panelEl.style.display = "flex";
       finalsEl.textContent = "";
@@ -277,26 +365,22 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase, sendHypothesi
       showPrompt(`Level ${level} cleared. Press 5 and say the rule, what misled you, and what would be faster.`);
     },
 
+    focusHypothesisInput() {
+      if (active) hypAddEl.focus();
+    },
+
+    get dictating() {
+      return dictating;
+    },
+
     setHypotheses(state) {
-      hypothesesEl.textContent = "";
-      if (state.pending) {
-        const pending = document.createElement("span");
-        pending.className = "hyp-chip pending";
-        pending.textContent = "H … say or type the hypothesis";
-        hypothesesEl.appendChild(pending);
-      }
-      for (const h of state.hypotheses) {
-        const chip = document.createElement("button");
-        chip.type = "button";
-        chip.tabIndex = -1; // keep keyboard focus on the game
-        chip.className = `hyp-chip ${h.status}${h.id === state.selected ? " is-selected" : ""}`;
-        chip.dataset.hypothesisId = h.id;
-        chip.dataset.status = h.status;
-        chip.title = `${h.id} (${h.status}) · stated at step ${h.step}: ${h.statement}`;
-        chip.textContent = `${h.id} ${h.statement}`;
-        chip.addEventListener("click", () => sendHypothesisSelect(h.id));
-        hypothesesEl.appendChild(chip);
-      }
+      dictating = Boolean(state.batch);
+      dictateEl.classList.toggle("is-on", dictating);
+      dictateEl.innerHTML = dictating ? "&#9209; stop dictating (V)" : "&#127897; dictate (V)";
+      dictatingEl.style.display = dictating ? "flex" : "none";
+      hypEmptyEl.style.display = state.hypotheses.length === 0 ? "block" : "none";
+      hypListEl.textContent = "";
+      for (const h of state.hypotheses) hypListEl.appendChild(buildRow(h, h.id === state.selected));
     },
 
     addNote(message) {

@@ -213,16 +213,34 @@ async def session(websocket: WebSocket) -> None:
                         if annotation.hyp.version != version:  # this note became a hypothesis
                             await websocket.send_json(_hypothesis_message(annotation))
 
-                elif msg_type in ("hypothesis_open", "hypothesis_verdict", "hypothesis_select"):
+                elif msg_type in (
+                    "hypothesis_open",
+                    "hypothesis_cancel",
+                    "hypothesis_add",
+                    "hypothesis_dictate",
+                    "hypothesis_verdict",
+                    "hypothesis_select",
+                ):
                     if annotation is None:
                         raise GameSourceError("hypotheses need an annotated session")
                     try:
                         if msg_type == "hypothesis_open":
-                            annotation.toggle_hypothesis()
+                            annotation.arm_hypothesis()
+                        elif msg_type == "hypothesis_cancel":
+                            annotation.cancel_hypothesis()
+                        elif msg_type == "hypothesis_add":
+                            text = str(message.get("text", "")).strip()
+                            if not text:
+                                raise HypothesisError("a hypothesis needs some text")
+                            annotation.add_hypothesis(text)  # shows in the list, not as a transcript line
+                        elif msg_type == "hypothesis_dictate":
+                            annotation.set_dictate(bool(message.get("on")))
                         elif msg_type == "hypothesis_select":
                             annotation.select_hypothesis(str(message.get("hypothesis_id")))
                         else:
-                            annotation.verdict(str(message.get("verdict")))
+                            annotation.verdict(
+                                str(message.get("verdict")), message.get("hypothesis_id")
+                            )
                     except HypothesisError as exc:
                         raise GameSourceError(str(exc)) from exc
                     await websocket.send_json(_hypothesis_message(annotation))

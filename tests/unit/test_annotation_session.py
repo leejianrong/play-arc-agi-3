@@ -74,7 +74,7 @@ def test_registry_lookup_and_close(tmp_path):
 def test_h_then_note_creates_hypothesis_event_linked_to_its_source(tmp_path):
     s = make(tmp_path)
     s.mark_step(0, 0)
-    s.toggle_hypothesis()
+    s.arm_hypothesis()
     note = s.note("the green block opens the door")
     evs = events(s)
     hyp = [e for e in evs if e["kind"] == "hypothesis"]
@@ -87,7 +87,7 @@ def test_h_then_note_creates_hypothesis_event_linked_to_its_source(tmp_path):
 def test_verdict_event_links_to_the_step_and_later_events_are_tagged(tmp_path):
     s = make(tmp_path)
     s.mark_step(0, 0)
-    s.toggle_hypothesis()
+    s.arm_hypothesis()
     s.note("door opens with green")
     s.mark_step(1, 0, is_action=True)
     s.mark_step(2, 0, is_action=True)
@@ -104,7 +104,7 @@ def test_speech_is_tagged_with_the_hypothesis_selected_when_it_began(tmp_path):
     clock = {"ms": 0}
     s.now_ms = lambda: clock["ms"]  # scripted time: the order of events is the point of this test
     s.mark_step(0, 0)
-    s.toggle_hypothesis()
+    s.arm_hypothesis()
     clock["ms"] = 100
     s.note("a")  # h1 selected from t=100
     clock["ms"] = 300
@@ -116,9 +116,59 @@ def test_speech_is_tagged_with_the_hypothesis_selected_when_it_began(tmp_path):
 def test_speech_while_armed_becomes_the_statement(tmp_path):
     s = make(tmp_path)
     s.mark_step(0, 0)
-    s.toggle_hypothesis()
+    s.arm_hypothesis()
     now = s.now_ms()
     ev = s.speech("the red thing is the goal", now + 10, now + 900, (0, 890))
     hyp = [e for e in events(s) if e["kind"] == "hypothesis"][0]
     assert hyp["source"] == "stt" and hyp["source_event_id"] == ev["event_id"] and ev["hypothesis_id"] == "h1"
     assert s.hypothesis_state()["pending"] is False
+
+
+def test_speech_records_phase_at_start_and_at_end(tmp_path):
+    s = make(tmp_path)
+    clock = {"ms": 0}
+    s.now_ms = lambda: clock["ms"]
+    s.mark_step(0, 0)
+    clock["ms"] = 1000
+    s.set_phase("plan")  # pressed 1000ms in
+    ev = s.speech("back to observing", start_ms=500, end_ms=1500, audio_offset_ms=(0, 1000))
+    assert (ev["phase"], ev["phase_at_end"]) == ("observe", "plan")
+
+
+def test_add_hypothesis_is_immediate_and_leaves_one_shot_capture_alone(tmp_path):
+    s = make(tmp_path)
+    s.mark_step(0, 0)
+    ev = s.add_hypothesis("blue cross rotates the square")
+    s.add_hypothesis("grey square is the target")
+    state = s.hypothesis_state()
+    assert [h["id"] for h in state["hypotheses"]] == ["h1", "h2"] and state["pending"] is False
+    assert ev["hypothesis_id"] == "h1" and ev["kind"] == "text"
+    kinds = [e["kind"] for e in events(s)]
+    assert kinds.count("hypothesis") == 2
+
+
+def test_dictate_turns_each_spoken_sentence_into_a_hypothesis_and_is_logged(tmp_path):
+    s = make(tmp_path)
+    s.mark_step(0, 0)
+    s.set_dictate(True)
+    now = s.now_ms()
+    s.speech("first idea", now + 1, now + 500, (0, 500))
+    s.speech("second idea", now + 600, now + 900, (600, 900))
+    s.note("a typed aside")  # typed notes are not captured while dictating
+    s.set_dictate(False)
+    s.speech("just talking", now + 1000, now + 1300, (1000, 1300))
+    evs = events(s)
+    assert [e["statement"] for e in evs if e["kind"] == "hypothesis"] == ["first idea", "second idea"]
+    assert [e["on"] for e in evs if e["kind"] == "dictate"] == [True, False]
+
+
+def test_verdict_by_id_event_and_reset(tmp_path):
+    s = make(tmp_path)
+    s.mark_step(0, 0)
+    s.add_hypothesis("a")
+    s.add_hypothesis("b")
+    s.verdict("confirmed", hypothesis_id="h1")
+    s.verdict("open", hypothesis_id="h1")
+    verdicts = [e for e in events(s) if e["kind"] == "hypothesis_verdict"]
+    vs = [(e["hypothesis_id"], e["previous"], e["verdict"]) for e in verdicts]
+    assert vs == [("h1", "open", "confirmed"), ("h1", "confirmed", "open")]

@@ -182,13 +182,22 @@ def wait_phase(page, name: str) -> None:
     )
 
 
-def chips(page) -> list[tuple[str, str, bool]]:
+def hyp_rows(page) -> list[tuple[str, str, bool]]:
+    """(id, status, being-tested) for every row in the hypotheses list."""
     rows = page.eval_on_selector_all(
-        ".hyp-chip[data-hypothesis-id]",
+        ".hyp-row",
         "els => els.map(e => [e.dataset.hypothesisId, e.dataset.status,"
         " e.classList.contains('is-selected')])",
     )
     return [tuple(row) for row in rows]  # JSON arrives as lists; compare as tuples
+
+
+def hyp_button(page, hid: str, which: str):
+    return page.locator(f".hyp-row[data-hypothesis-id={hid}] .hyp-actions button.{which}")
+
+
+def wait_hyp(page, hid: str, status: str) -> None:
+    page.wait_for_selector(f".hyp-row[data-hypothesis-id={hid}][data-status={status}]", timeout=5_000)
 
 
 def type_note(page, text: str) -> None:
@@ -304,71 +313,149 @@ def flow_notes_phases_mute_end(app: App, mic: Path, headed: bool) -> None:
 
 
 def flow_hypotheses(app: App, mic: Path, headed: bool) -> None:
+    """The V5 workflow after user feedback: a visible list, several added at once, marked true/false
+    per row in any order, plus dictate mode."""
     with browser_page(app, mic, headed) as page:
         start_game(page, "ls20")
+        box = page.eval_on_selector(
+            "[data-role=hyp-add]", "e => { const r = e.getBoundingClientRect(); return [r.width, r.height]; }"
+        )
+        check("hypotheses section renders with a usable input", box[0] > 200 and box[1] > 15, str(box))
+        check(
+            "empty state explains the workflow",
+            "mark each true or false" in page.inner_text("[data-role=hyp-empty]"),
+        )
 
         page.keyboard.press("h")
-        page.wait_for_selector(".hyp-chip.pending")
-        check("H shows a pending chip", True)
-        type_note(page, "the green block opens the door")
-        page.wait_for_selector(".hyp-chip[data-hypothesis-id=h1]")
-        check("typed statement becomes h1, open and selected", chips(page) == [("h1", "open", True)])
-        check("pending chip is gone", page.locator(".hyp-chip.pending").count() == 0)
-
-        page.keyboard.press("ArrowUp")
-        page.keyboard.press("n")
-        page.wait_for_selector(".hyp-chip[data-status=refuted]")
+        check("H jumps to the add box", page.evaluate("document.activeElement.dataset.role") == "hyp-add")
+        for text in (
+            "the blue cross rotates the square",
+            "the grey square is the goal",
+            "I only get 40 moves",
+        ):
+            page.keyboard.type(text)
+            page.keyboard.press("Enter")
+        page.wait_for_selector(".hyp-row[data-hypothesis-id=h3]")
         check(
-            "N refutes the selected hypothesis and clears selection",
-            chips(page) == [("h1", "refuted", False)],
+            "three hypotheses added in a row, all open, last one being tested",
+            hyp_rows(page) == [("h1", "open", False), ("h2", "open", False), ("h3", "open", True)],
+            str(hyp_rows(page)),
+        )
+        check(
+            "add box is empty and still focused for the next one",
+            page.input_value("[data-role=hyp-add]") == ""
+            and page.evaluate("document.activeElement.dataset.role") == "hyp-add",
+        )
+        size = page.eval_on_selector(
+            ".hyp-row[data-hypothesis-id=h1] .hyp-actions button.yes",
+            "e => { const r = e.getBoundingClientRect(); return [r.width, r.height]; }",
+        )
+        check("true/false buttons render with a real size", size[0] > 30 and size[1] > 12, str(size))
+
+        before = app.recording_lines("ls20")
+        page.keyboard.press("Escape")
+        check(
+            "Esc gives the keyboard back to the game",
+            page.evaluate("document.activeElement.tagName") != "INPUT",
+        )
+        page.keyboard.press("ArrowUp")
+        page.wait_for_timeout(300)
+        check("a game key now acts in the game", app.recording_lines("ls20") > before)
+
+        hyp_button(page, "h2", "no").click()
+        wait_hyp(page, "h2", "refuted")
+        check(
+            "false on an un-selected row marks only that row",
+            hyp_rows(page) == [("h1", "open", False), ("h2", "refuted", False), ("h3", "open", True)],
+            str(hyp_rows(page)),
         )
         line = page.eval_on_selector(
-            ".hyp-chip[data-hypothesis-id=h1]", "e => getComputedStyle(e).textDecorationLine"
+            ".hyp-row[data-hypothesis-id=h2] .hyp-text", "e => getComputedStyle(e).textDecorationLine"
         )
-        check("a refuted chip renders struck through", "line-through" in line, line)
+        check("a false hypothesis renders struck through", "line-through" in line, line)
+        check("a FALSE badge is shown", "FALSE" in page.inner_text(".hyp-row[data-hypothesis-id=h2]"))
+        hyp_button(page, "h1", "yes").click()
+        wait_hyp(page, "h1", "confirmed")
+        check(
+            "true marks it confirmed with a TRUE badge",
+            "TRUE" in page.inner_text(".hyp-row[data-hypothesis-id=h1]"),
+        )
 
+        statuses = hyp_rows(page)
+        page.keyboard.press(" ")  # a still-focused button would re-activate on Space
+        page.wait_for_timeout(300)
+        check("Space after clicking a button does not re-press it", hyp_rows(page) == statuses)
+        before = app.recording_lines("ls20")
+        page.keyboard.press("ArrowUp")
+        page.wait_for_timeout(300)
+        check("and a game key still acts in the game", app.recording_lines("ls20") > before)
+
+        hyp_button(page, "h2", "reset").click()
+        wait_hyp(page, "h2", "open")
+        check("reset puts a decided hypothesis back to open", True)
+
+        page.click(".hyp-row[data-hypothesis-id=h2] .hyp-text")
+        page.wait_for_selector(".hyp-row[data-hypothesis-id=h2].is-selected")
+        check(
+            "clicking a row marks it as the one being tested",
+            "testing" in page.inner_text(".hyp-row[data-hypothesis-id=h2]"),
+        )
+        page.keyboard.press("y")
+        wait_hyp(page, "h2", "confirmed")
+        page.wait_for_selector(".hyp-row[data-hypothesis-id=h3].is-selected")
+        check("Y confirms the one being tested and focus moves to the next open one", True)
+        page.keyboard.press("n")
+        wait_hyp(page, "h3", "refuted")
         page.keyboard.press("y")
         page.wait_for_selector("#error", state="visible")
-        check("Y with nothing selected explains itself", "press H" in page.inner_text("#error"))
+        check("Y/N with nothing being tested explains itself", "add one first" in page.inner_text("#error"))
 
-        page.keyboard.press("h")
-        type_note(page, "second idea")
-        page.wait_for_selector(".hyp-chip[data-hypothesis-id=h2]")
-        page.keyboard.press("y")
-        page.wait_for_selector(".hyp-chip[data-hypothesis-id=h2][data-status=confirmed]")
-        check("Y confirms h2", ("h2", "confirmed", False) in chips(page))
-
-        page.click(".hyp-chip[data-hypothesis-id=h1]")
-        page.wait_for_selector(".hyp-chip[data-hypothesis-id=h1].is-selected")
-        page.keyboard.press("y")
-        page.wait_for_selector(".hyp-chip[data-hypothesis-id=h1][data-status=confirmed]")
-        check("clicking a closed chip then Y reopens it with a new verdict", True)
-
-        page.keyboard.press("h")
-        page.wait_for_selector(".hyp-chip.pending")
-        page.wait_for_selector(".hyp-chip[data-hypothesis-id=h3]", timeout=40_000)
+        page.click("[data-role=dictate]")
+        page.wait_for_selector("[data-role=hyp-dictating]", state="visible")
         check(
-            "a spoken sentence can become a hypothesis",
-            "spoken thought" in page.inner_text(".hyp-chip[data-hypothesis-id=h3]"),
+            "dictate mode is clearly shown", "every sentence" in page.inner_text("[data-role=hyp-dictating]")
         )
+        page.wait_for_selector(".hyp-row[data-hypothesis-id=h5]", timeout=60_000)
+        check(
+            "each spoken sentence became its own hypothesis",
+            "spoken thought" in page.inner_text(".hyp-row[data-hypothesis-id=h5] .hyp-text"),
+        )
+        page.keyboard.press("v")
+        page.wait_for_selector("[data-role=hyp-dictating]", state="hidden")
+        count = len(hyp_rows(page))
+        page.wait_for_timeout(11_000)  # longer than one fake-mic loop
+        check("V stops dictating: no new hypotheses appear afterwards", len(hyp_rows(page)) == count)
         end_session(page)
 
     events = app.sidecar("ls20")
-    verdicts = [
-        (e["hypothesis_id"], e["verdict"], e["previous"]) for e in events if e["kind"] == "hypothesis_verdict"
-    ]
-    check(
-        "sidecar: verdict trail",
-        verdicts == [("h1", "refuted", "open"), ("h2", "confirmed", "open"), ("h1", "confirmed", "refuted")],
-        str(verdicts),
-    )
     stated = [e for e in events if e["kind"] == "hypothesis"]
     check(
-        "sidecar: three hypotheses, third from speech",
-        [e["hypothesis_id"] for e in stated] == ["h1", "h2", "h3"] and stated[2]["source"] == "stt",
+        "sidecar: typed h1-h3 then spoken h4-h5",
+        [(e["hypothesis_id"], e["source"]) for e in stated][:5]
+        == [("h1", "typed"), ("h2", "typed"), ("h3", "typed"), ("h4", "stt"), ("h5", "stt")],
     )
-    refuted = next(e for e in events if e["kind"] == "hypothesis_verdict")
-    check("sidecar: refutation is linked to the step it died at", refuted["step_at_end"] >= 1)
+    trail = [
+        (e["hypothesis_id"], e["previous"], e["verdict"]) for e in events if e["kind"] == "hypothesis_verdict"
+    ]
+    check(
+        "sidecar: verdict trail incl. reset and change of mind",
+        trail
+        == [
+            ("h2", "open", "refuted"),
+            ("h1", "open", "confirmed"),
+            ("h2", "refuted", "open"),
+            ("h2", "open", "confirmed"),
+            ("h3", "open", "refuted"),
+        ],
+        str(trail),
+    )
+    check(
+        "sidecar: dictate on then off", [e["on"] for e in events if e["kind"] == "dictate"] == [True, False]
+    )
+    check(
+        "sidecar: speech events record phase at start and at end",
+        all("phase_at_end" in e for e in events if e["kind"] == "speech"),
+    )
 
 
 def flow_reflect_prompt(app: App, mic: Path, headed: bool) -> None:

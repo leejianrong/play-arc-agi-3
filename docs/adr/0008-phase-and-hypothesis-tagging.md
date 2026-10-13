@@ -96,3 +96,23 @@ Enter sends, Esc cancels, both return focus to the game).
   game action while in `reflect` now flips to `probe` (like `observe`); otherwise a forgotten `1` would
   leave the next level mislabelled `reflect`.
 - A first action that itself clears a level never passes through `probe`: the level clear wins.
+
+## Revision after first use (2026-10-14): hypotheses are a list, not a hotkey ritual
+
+The V5 design (`H`, say it, `Y`/`N`) failed in a real session: no hypothesis was ever recorded. `H` was a
+toggle, a statement only arrives 2-3 s after you stop talking, and a second `H` press (to "finish") cancelled
+the capture before the sentence landed. There was also no visible list and no way to enter several ideas, test
+them, and mark them as the game is worked out. Superseding the V5 notes above:
+
+- **A visible list** of hypotheses under the grid, each row with `true`, `false` and reset buttons that act on
+  *that* row, in any order, any time. A row can be un-decided or changed (`previous` records it).
+- **Several at once:** a type-and-Enter box that stays focused for the next one (`H` jumps to it, Esc returns to
+  the game), and **dictate** mode (button or `V`) in which every spoken sentence becomes a hypothesis until you
+  stop. Typed notes stay notes while dictating.
+- **"Being tested" is a focus**, not a gate: click a row to set it; `Y`/`N` act on it and then move on to the
+  latest other open hypothesis. Marking another row never steals the focus. It is used to tag your speech.
+- **Arming is idempotent** (`hypothesis_open`), cancelling is explicit (`hypothesis_cancel`). The UI no longer
+  exposes the one-shot path, only the list, dictate, and the shortcuts.
+- Speech events now also store `phase_at_end` next to `phase` (at start): a deliberate phase key is usually
+  pressed *after* saying the sentence, so the start phase mislabels it.
+- Lone hesitations ("Um...", "Hmm") are dropped at transcription time.
