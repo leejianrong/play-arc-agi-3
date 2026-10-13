@@ -34,20 +34,32 @@ _empty — round closed_
 | Q21 | Recordings piled up unbounded and full mode is huge (25MB+ sessions seen) — default behavior and detail-level options? | DECIDED | Default OFF. Picker gets an Off/Lean/Full control; Lean omits the frame grid, viable now because games are confirmed deterministic (checked `arcengine` for any randomness source — found none that affects gameplay), so a lean recording's frames are reconstructable later via local replay. | ADR-0005 |
 | Q22 | UI style for the record on/off/detail choice: checkbox, per-game confirm dialog, mid-session toggle, or a control near the picker? | DECIDED | A single `Off/Lean/Full` dropdown in the picker header, default Off — one persistent control, no per-click interruption. | ADR-0005, frontend redesign |
 | Q23 | Thumbnails per game in the picker — render each game's real first frame, or something cheaper? | DECIDED | A deterministic per-`game_id` swatch (`frontend/identicon.js`): a hash-seeded sparse pattern drawn from the real ARC palette, not an actual preview. Rendering real first frames would mean downloading every listed game's source just to populate the picker — the identicon costs nothing and needs no network. | frontend redesign |
+| Q24 | Speech-to-text engine? (F1) | DECIDED | Local `faster-whisper` `small.en` behind a `Transcriber` protocol; typed notes always available | ADR-0006 |
+| Q25 | Mic behaviour? (F2) | DECIDED | Continuous capture with VAD and a mute key, not hold-to-talk | ADR-0006 |
+| Q26 | How are phases labelled? (F3) | DECIDED | Explicit: starts `observe` each level, first game action auto-switches to `probe`, keys `1-5` for the rest; never blocks input | ADR-0008 |
+| Q27 | Hypothesis structure? (F4) | DECIDED | Free text primary, plus sparse `H`/`Y`/`N` tags with stable IDs, mapping onto `solve-arc-agi-3`'s ledger | ADR-0008 |
+| Q28 | Milestone scope? (F5) | DECIDED | Capture plus a timeline CLI with replay verification; no in-app viewer, no exporter | ADR-0007, PLAN §Scope |
+| Q29 | Which games get annotated? (F6, "your call") | DECIDED | `heldout` (9 games, annotation refused), `reference-only` (other public games), `train-ok` (custom envs) | ADR-0009 |
+| Q30 | Where do annotations live? | ASSUMED | Sidecar `*.annotations.jsonl` aligned by step index and time; `Recorder` only gains `frame_sha256` (schema 3) | ADR-0007 |
+| Q31 | Frame fidelity and audio retention for annotated sessions? | ASSUMED | At least Lean (Off promoted to Lean); raw opus audio kept locally and gitignored, `KEEP_AUDIO=0` to disable | ADR-0006, ADR-0007 |
+| Q32 | Keys that don't clash with the game? | ASSUMED | `T` focus note box, `1-5` phases, `H/Y/N` hypotheses, `M` mute | ADR-0008 |
+| Q33 | Initial held-out list? | ASSUMED | Every third public game in sorted order; should be reconciled with the solver's eval split | ADR-0009 |
+| Q34 | Annotation failure behaviour? | ASSUMED | Mic, model or `/ws/audio` failure shows a banner and play, recording and typed notes continue; truncated sidecars stay readable | PLAN §Open risks, SLICES V3 |
+| Q35 | Sensitive data in annotations? | ASSUMED | Voice audio and transcripts are local only and gitignored; no API key in any annotation file; no cloud STT | ADR-0006 |
 
 ## Coverage
 
 | Category | Covered by |
 |----------|-----------|
-| Primary user and actors | Q4 |
-| Scope boundary | Q2, Q5 |
-| Data model and identity | Q3, Q14 |
-| State and storage | Q6, Q7 |
+| Primary user and actors | Q4, Q25 |
+| Scope boundary | Q2, Q5, Q28 |
+| Data model and identity | Q3, Q14, Q26, Q27, Q30 |
+| State and storage | Q6, Q7, Q29, Q31 |
 | Concurrency and conflict | Q7 |
-| Interfaces and contracts | Q1, Q8, Q9, Q10, Q11 |
-| Failure behaviour | Q15 |
-| External dependencies | Q8, Q12, Q18 |
+| Interfaces and contracts | Q1, Q8, Q9, Q10, Q11, Q32 |
+| Failure behaviour | Q15, Q34 |
+| External dependencies | Q8, Q12, Q18, Q24 |
 | Runtime and deployment | Q1, Q13 |
 | Measurable success | Q16 |
-| Security and secrets | Q12 |
+| Security and secrets | Q12, Q35 |
 | Versioning and migration | Q14 |

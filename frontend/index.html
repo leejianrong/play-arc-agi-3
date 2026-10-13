@@ -174,6 +174,65 @@
       cursor: crosshair;
     }
 
+    .annotate-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg-dim);
+      cursor: pointer;
+    }
+
+    .controls { display: flex; align-items: center; gap: 16px; }
+
+    #transcript {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      width: 512px;
+      max-width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+
+    #transcript .head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg-dim);
+    }
+
+    #transcript .meter {
+      display: block;
+      flex: none;
+      width: 80px;
+      height: 6px;
+      background: var(--ink);
+      border: 1px solid var(--line);
+    }
+
+    /* display:block matters: an inline span ignores width/height, so the bar was invisible. */
+    #transcript .meter-fill { display: block; height: 100%; width: 0%; background: #4cc38a; transition: width 60ms linear; }
+
+    #transcript .banner {
+      display: none;
+      background: var(--danger);
+      color: var(--danger-fg);
+      padding: 6px 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    #transcript .finals { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+    #transcript .final { display: flex; gap: 10px; }
+    #transcript .steps { flex: none; font-family: var(--mono); font-size: 11px; color: var(--fg-dim); padding-top: 2px; }
+    #transcript .interim { min-height: 1.3em; color: var(--fg-dim); font-style: italic; }
+
     #hint {
       font-family: var(--mono);
       font-size: 11px;
@@ -186,13 +245,19 @@
 <body>
   <div class="topbar">
     <p class="wordmark">ARC PLAY</p>
-    <div class="record-control">
-      <label for="record-mode">recording</label>
-      <select id="record-mode">
-        <option value="off" selected>off</option>
-        <option value="lean">lean</option>
-        <option value="full">full</option>
-      </select>
+    <div class="controls">
+      <label class="annotate-control" title="Think aloud: live local speech-to-text saved beside the recording (needs lean or full recording)">
+        <input type="checkbox" id="annotate" />
+        annotate
+      </label>
+      <div class="record-control">
+        <label for="record-mode">recording</label>
+        <select id="record-mode">
+          <option value="off" selected>off</option>
+          <option value="lean">lean</option>
+          <option value="full">full</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -208,6 +273,15 @@
       <span id="levels"></span>
     </div>
     <canvas id="grid" width="512" height="512"></canvas>
+    <div id="transcript" data-testid="transcript">
+      <div class="head">
+        <span data-role="status">idle</span>
+        <span class="meter"><span class="meter-fill" data-role="meter-fill"></span></span>
+      </div>
+      <div class="banner" data-role="banner"></div>
+      <div class="finals" data-role="finals"></div>
+      <div class="interim" data-role="interim"></div>
+    </div>
     <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset</p>
   </div>
 

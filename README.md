@@ -28,6 +28,22 @@ make run
 - Backspace — undo (ACTION7, when the game offers it)
 - R — reset
 
+## Annotating with your voice
+
+Tick **annotate** in the picker (it needs recording; Off is promoted to Lean), then pick a game and
+think aloud. A mic stream is transcribed locally with Whisper and shown beside the grid; final text is
+saved next to the recording as `*.annotations.jsonl`, aligned to the game steps you were on, with the
+raw audio kept as `*.audio.webm`.
+
+```sh
+make run-annotate    # run + the optional faster-whisper extra (first run downloads the model, ~0.5 GB)
+```
+
+Use `make run-annotate`, not `make run`: plain `uv sync` removes the speech extra. Your browser asks for
+mic permission on first use. If the mic or model is unavailable you get a banner and play and recording
+carry on. Tuning: `STT_MODEL` (default `small.en`; `base.en` is about 3x faster), `STT_SILENCE_MS`
+(default 1000), `KEEP_AUDIO=0`. Measurements: `docs/STT-MEASUREMENTS.md`; design: ADR-0006 to ADR-0009.
+
 ## Configuration
 
 | Variable | Required | Default | Meaning |

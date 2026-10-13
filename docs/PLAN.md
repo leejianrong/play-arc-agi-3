@@ -1,6 +1,6 @@
 # ARC Play (play-arc-agi-3): Plan
 
-Status: agreed · Milestone: MVP
+Status: agreed · Milestone: MVP (done) + Annotation (planned 2026-10-13, slices V3-V6)
 
 ## Problem
 
@@ -16,6 +16,15 @@ what you did, and when. That matters because the longer-term goal is an
 annotation tool for capturing a human's thought process while solving these
 puzzles, and that tool needs something to load.
 
+**Annotation milestone (2026-10-13).** The MVP records what you did but not
+why. The goal now is a dataset of human reasoning on ARC-AGI-3 puzzles --
+spoken think-aloud (or typed notes) aligned to game steps, with an explicit
+phase (observe, probe, plan, execute, reflect) and optional hypothesis tags --
+good enough to inspect, to compare against the solver's hypothesis ledger in
+`solve-arc-agi-3`, and eventually to fine-tune a small model. The part that is
+hardest to get right is not the plumbing but the data: what you say, when, and
+whether it can legally and sensibly be used for training (ADR-0009).
+
 ## Solution
 
 A local web app you start with one command. It opens in your browser, lists
@@ -23,6 +32,35 @@ the real ARC-AGI-3 games (and, once slice V2 lands, any custom puzzles you've
 authored yourself), and lets you play one with keyboard and mouse against a
 fast Canvas-rendered grid. Every action you take and every frame you see is
 recorded automatically to a plain file on disk — nothing to remember to save.
+
+With annotation on, you also think aloud. A mic stream is transcribed locally
+and appears as live text beside the grid; you can type a note instead at any
+time. A phase chip shows where you are in the loop (it starts at OBSERVE on
+each level and flips to PROBE the moment you touch the game); keys declare the
+other phases and tag hypotheses as confirmed or refuted. Afterwards, a CLI
+turns a session into a readable timeline and verifies that replaying your moves
+reproduces what you saw.
+
+### Human play protocol
+
+The tool exists to make this protocol cheap to follow. Per level:
+
+1. **OBSERVE** (hands off): describe objects, colours, symmetries, what looks
+   controllable, what looks like the goal; state at least one hypothesis.
+2. **PROBE** (touch): say "prediction: ..." before each probe, act, then say
+   "result: matched / not, because ...". Cheap, reversible probes first; one
+   variable at a time.
+3. **PLAN**: state the rule you concluded and your confidence, then the plan in
+   chunks, before executing.
+4. **EXECUTE**: narrate only surprises. A surprise returns you to OBSERVE or
+   PROBE, and you say which hypothesis died.
+5. **REFLECT** (1-3 sentences after each level): the rule, what misled you,
+   what would have been faster.
+
+Habits that matter more than the phases: keep dead ends in; prediction before
+outcome; say decisions, not play-by-play; use the same vocabulary every time;
+play unfamiliar games, since first contact is where reasoning is most visible.
+Which games to annotate is governed by ADR-0009.
 
 ## Users and actors
 
@@ -39,13 +77,21 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 - Play locally-authored custom puzzle environments through the same UI,
   sequenced after the above (R6).
 
+**In the annotation milestone (V3-V6).**
+- Live speech capture, local transcription, typed notes (R9, R10).
+- Phase and hypothesis tagging (R11).
+- A sidecar annotation file aligned to recorded steps, with frame hashes for
+  replay verification (R12).
+- A timeline CLI with replay verification (R13).
+- A data-use label and a held-out game list (R14).
+
 **Out.**
-- Annotation UI — attaching notes/thought-process to frames. This is the
-  explicit "eventually," not now; the recording format (ADR-0003) is chosen
-  so it doesn't need to change shape when that milestone starts.
-- Reviewing/playing back a past recording inside the app. The recordings
-  exist and are inspectable as files; a viewer is part of the annotation
-  milestone, not this one.
+- An in-app replay viewer or transcript editor. Review is by the timeline CLI
+  and hand-editing the annotations file; revisit after real sessions.
+- A training-format exporter and any fine-tuning. The schema keeps
+  `(thought, action)` derivable (ADR-0007); building the exporter waits for
+  actual data and for `solve-arc-agi-3`'s fine-tuning gate.
+- Cloud speech-to-text, speaker diarization, multi-person sessions.
 - Agent play, scorecards, or anything competition-submission-related — this
   is a human-play tool.
 - Multi-user, cloud sync, mobile. Single laptop, single user.
@@ -67,6 +113,12 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | R6 | Support locally-authored custom puzzle environments through the same play+record flow | Must-have |
 | R7 | The API key and any secrets never leave the local machine, and never appear in recordings or logs | Must-have |
 | R8 | Recordings are self-contained: a future annotation tool can load one without recontacting any API | Nice-to-have |
+| R9 | Speak while playing and see a live transcript; final segments are stored aligned to game steps, with no audio sent off the machine | Core goal (annotation) |
+| R10 | Type a note at any time as an equivalent alternative to speech; the session works fully with no mic or model | Must-have |
+| R11 | Every annotation carries an explicit phase; hypotheses can be opened and marked confirmed or refuted with single keys, without blocking game input | Must-have |
+| R12 | Annotations live in a sidecar file aligned to steps; each recorded step carries a frame hash so replay can be verified | Must-have |
+| R13 | A CLI renders a session as a readable timeline and verifies a replay against the recorded frame hashes | Must-have |
+| R14 | Every annotated session is labelled `train-ok`, `reference-only` or `heldout`; annotating a held-out game is refused | Must-have |
 
 ## Shape
 
@@ -77,6 +129,11 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | S3 | Vanilla JS + Canvas single-page frontend: renders `FrameData.frame` as a colored grid, captures keyboard/mouse, sends WS messages | ADR-0001 |
 | S4 | `Recorder`, opt-in per session (off/lean/full, chosen in the picker): subscribes to every `FrameData` a `GameSource` produces (including from `reset()`), appends one versioned JSONL line per step; lean mode omits the frame grid | ADR-0003, ADR-0005 |
 | S5 | `.env`-based `ARC_API_KEY` loaded server-side only; server binds `127.0.0.1` only | — |
+| S6 | Audio path: browser AudioWorklet (16 kHz mono PCM16) → binary frames on `/ws/audio` → VAD → `Transcriber` (faster-whisper `small.en`) → interim and final text back to the UI; `MediaRecorder` opus kept beside the session | ADR-0006 |
+| S7 | `AnnotationWriter`: append-only sidecar JSONL (`session_start`, `speech`, `text`, `phase_change`, `hypothesis`, `hypothesis_verdict`, `mute`), each event stamped with `step_at_start/end`, level, phase | ADR-0007 |
+| S8 | Phase state machine (observe → probe auto on first action; hotkeys for the rest) and hypothesis registry with stable IDs | ADR-0008 |
+| S9 | `Recorder` gains `frame_sha256` (schema 3); `make timeline` CLI merges recording + annotations and replays with `--verify` | ADR-0007 |
+| S10 | `data_policy.json` + `data_use` label on `session_start`; annotation refused for held-out games | ADR-0009 |
 
 ## Affordances
 
@@ -90,6 +147,12 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | Mouse click on grid | Play screen | WS `action {id: 6, data: {x,y}}`, coordinates scaled to 0-63 |
 | Status/state header (score, levels, GameState) | Play screen | Renders latest `FrameData` metadata fields |
 | Error banner | Play screen | WS error events (API failures, missing key, local env exceptions) |
+| Annotate toggle in the picker (default off; requires Lean or Full, promotes Off to Lean) | Landing screen | WS `start {…, annotate: true}` |
+| Live transcript panel: interim text greyed, finals appended, mic level meter, muted indicator | Play screen | `/ws/audio` interim/final messages |
+| Phase chip (observe / probe / plan / execute / reflect), keys `1-5` | Play screen | Phase state machine; `phase_change` events |
+| Hypothesis chips with status; keys `H`, `Y`, `N`, click to select | Play screen | `hypothesis` / `hypothesis_verdict` events |
+| Typed-note box, `T` to focus, Enter to send, Esc to cancel | Play screen | `text` events |
+| Mute key `M`; banner when mic or model is unavailable | Play screen | `mute` events; session continues with typed notes |
 
 **Non-UI.**
 
@@ -97,6 +160,9 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 |------------|------|----------|
 | `Recorder.append()` | handler, fired on every `FrameData` | Writes one JSONL line under `recordings/` |
 | `ArcadeGameSource` | local process wrapper | `arc_agi.Arcade` (`NORMAL`/`OFFLINE`), `environment_files/` |
+| `Transcriber` (faster-whisper) | optional-extra service | Utterance audio buffers → text; fake implementation in tests |
+| `AnnotationWriter` | handler | Appends to `*.annotations.jsonl` |
+| `make timeline FILE=… [--verify]` | CLI | Recording + annotations → markdown; replay against `frame_sha256` |
 
 ## Implementation decisions
 
@@ -119,6 +185,17 @@ A second browser tab connecting mid-session is a known MVP limitation, not
 handled gracefully — surfacing this cleanly (reject vs. take over) is
 deferred, since it's cheap to add a lock later without touching the rest of
 the design.
+
+Annotation modules (ADR-0006 to ADR-0009): `backend/annotations/`
+(`writer.py`, `phases.py`, `policy.py`), `backend/stt/` (`base.py` with the
+`Transcriber` protocol and a fake, `whisper.py`, `vad.py`), a second WebSocket
+route `/ws/audio` tied to the active session, and frontend modules
+`audio_worklet.js`, `annotation_ui.js`. `faster-whisper` is an optional
+dependency group (`uv sync --extra stt`) so CI and `make check` don't pull it.
+Annotated sessions write the sidecar and audio next to the recording
+(ADR-0007); `Recorder` only gains `frame_sha256`. All annotation events share
+one server clock with the recording's `timestamp`, and the audio client stamps
+its offset at stream open so speech maps to `step_at_start/end`.
 
 Recording filenames: `recordings/{source}.{game_id}.{guid}.{started_at}.recording.jsonl`,
 one file per session, matching the pattern the official `ARC-AGI-3-Agents`
@@ -155,8 +232,28 @@ assert.
 | Q9 | Canvas rendering, not DOM | Low — isolated to the frontend renderer |
 | Q10 | Specific keyboard/mouse mapping | Low — a config-level remap, not a redesign |
 | Q17 | 16-color palette guessed from ARC-AGI convention, confirmed empirically | Low — visually obvious and fixed in slice V1 the moment a real game is rendered |
+| Q30 | Sidecar file rather than inline annotations; additive `frame_sha256` on `Recorder` | Low — a reader can merge either shape |
+| Q31 | Annotated sessions at least Lean; raw audio kept locally | Low — one flag each |
+| Q32 | Typed-note focus on `T`; hotkeys `1-5/H/Y/N/M` | Low — config-level remap |
+| Q33 | Initial held-out list is every third public game in sorted order | Medium — if it disagrees with the solver's eval split, the file must be edited before annotating those games |
 
 ## Open risks
+
+- **Usable training data is gated on custom games.** Under ADR-0009 only
+  custom environments produce `train-ok` data; public-game sessions are
+  reference-only. Until V2 is used to author a set of custom puzzles, the
+  annotation milestone yields a protocol and tooling more than a training set.
+  Surfaces as soon as the first `train-ok` session is wanted.
+- **Mic path through WSL2.** The browser is expected to run on Windows and
+  capture audio itself; if it runs under WSLg instead, device access may be
+  the problem. Slice V3 confronts this first.
+- **Whisper on continuous, noisy audio.** Key clatter and silence produce junk
+  or hallucinated segments, and CPU latency may exceed the 1-3 s estimate.
+  Slice V3 measures it; mitigations are VAD tuning, a smaller or GPU model,
+  and the review step.
+- **Habit drift.** The protocol only helps if followed; phase labels and
+  prediction/result phrasing degrade as you tire. The timeline CLI is how this
+  gets noticed.
 
 - **Exact 0-15 color palette** wasn't confirmed from an authoritative source
   during planning. Low risk, immediately visible and fixable in slice V1.

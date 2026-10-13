@@ -1,10 +1,11 @@
-.PHONY: help install run test lint check hooks download-games clean
+.PHONY: help install run run-annotate test lint check hooks download-games clean
 
 .DEFAULT_GOAL := help
 
 help:
 	@echo "make install         - sync Python dependencies (uv)"
 	@echo "make run             - start the app; prints the URL to open. PORT=xxxx to prefer a port"
+	@echo "make run-annotate    - like run, plus the optional speech-to-text extra (faster-whisper) for annotated sessions"
 	@echo "make test            - run the fast test layer (pytest + node --test), no infra needed"
 	@echo "make lint            - run ruff over backend/ main.py scripts/ tests/"
 	@echo "make check           - lint + test; what the pre-push hook runs"
@@ -17,6 +18,11 @@ install:
 
 run: install
 	uv run python main.py
+
+# `uv sync` is exact, so it would strip the stt extra; use the extra for both steps here.
+run-annotate:
+	uv sync --extra stt
+	uv run --extra stt python main.py
 
 test: install
 	uv run pytest

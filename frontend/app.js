@@ -1,6 +1,7 @@
 import { keyToActionId, clickToGridCoords } from "/static/input_mapping.js";
 import { PALETTE } from "/static/palette.js";
 import { swatchGrid } from "/static/identicon.js";
+import { createAnnotationUI } from "/static/annotation_ui.js";
 
 const pickerEl = document.getElementById("picker");
 const playEl = document.getElementById("play");
@@ -10,7 +11,9 @@ const stateEl = document.getElementById("state");
 const levelsEl = document.getElementById("levels");
 const errorEl = document.getElementById("error");
 const recordModeEl = document.getElementById("record-mode");
-const recordControlEl = document.querySelector(".record-control");
+const controlsEl = document.querySelector(".controls");
+const annotateEl = document.getElementById("annotate");
+const annotation = createAnnotationUI(document.getElementById("transcript"));
 
 const CELL_PX = canvas.width / 64;
 const SWATCH_CELL_PX = 8;
@@ -26,9 +29,20 @@ ws.addEventListener("message", (event) => {
     renderPicker(message.games);
   } else if (message.type === "frame") {
     renderFrame(message.frame_data);
+  } else if (message.type === "annotation") {
+    annotation.start(message.session_id);
   } else if (message.type === "error") {
     showError(message.message);
   }
+});
+
+// Annotations need a recording to align to (ADR-0007); the server promotes Off to Lean, and we
+// show the same thing in the control so nobody is surprised.
+annotateEl.addEventListener("change", () => {
+  if (annotateEl.checked && recordModeEl.value === "off") recordModeEl.value = "lean";
+});
+recordModeEl.addEventListener("change", () => {
+  if (annotateEl.checked && recordModeEl.value === "off") recordModeEl.value = "lean";
 });
 
 ws.addEventListener("close", () => showError("Connection to the local server closed."));
@@ -104,9 +118,11 @@ function buildSwatch(gameId) {
 }
 
 function startGame(gameId) {
-  ws.send(JSON.stringify({ type: "start", game_id: gameId, record: recordModeEl.value }));
+  ws.send(
+    JSON.stringify({ type: "start", game_id: gameId, record: recordModeEl.value, annotate: annotateEl.checked })
+  );
   pickerEl.style.display = "none";
-  recordControlEl.style.display = "none";
+  controlsEl.style.display = "none";
   playEl.style.display = "flex";
 }
 
