@@ -81,3 +81,16 @@ editing the annotations file; the CLI preserves edits by never rewriting it.
   verification, ADR-0005's determinism claim is wrong for that game and lean
   recordings of it are not trustworthy.
 - No exporter or in-app viewer yet; reviewing is by markdown file.
+
+## Implementation notes (V6, 2026-10-14)
+
+- `frame_sha256` is the sha256 of the frame's canonical JSON (`separators=(",", ":")`), recorded on every step
+  including lean mode; schema 3. Readers accept 1, 2 and 3.
+- `make timeline` places each annotation after the step in `step_at_end` and before the next action. A new
+  section starts on a level change, a reset, or a level regression (`levels_completed` resets to 0 after a game
+  over), so attempts read separately. Events with `"ignore": true` are hidden and counted.
+- `--verify` replays in OFFLINE mode from `environment_files/` (or `--env-dir`), so it needs no network or key. It
+  compares state, levels and (when recorded, or derivable from a full-mode frame) the frame hash, and reports the
+  first divergence. Older recordings are compared on state and levels only. Exit codes: 0 same, 1 differs, 2 error.
+- Checked on the first real sessions (ls20, 142 steps including a game over; r11l, 9 steps): both replay
+  identically on state and levels, supporting ADR-0005's determinism claim for those games.

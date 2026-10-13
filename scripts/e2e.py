@@ -86,11 +86,13 @@ class App:
         self.rec = tmp / "rec"
         self.rec.mkdir()
         envs = tmp / "envs"
+        self.envs = envs
         envs.mkdir()
         real = ROOT / "environment_files"
         if real.is_dir():
             for child in real.iterdir():
-                (envs / child.name).symlink_to(child, target_is_directory=True)
+                # Copies, not symlinks: arc_agi's offline scan doesn't follow symlinked game folders.
+                shutil.copytree(child, envs / child.name)
         shutil.copytree(FIXTURE_ENVS / "tst1", envs / "tst1")  # a one-action level: a fast "level clear"
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
@@ -501,12 +503,73 @@ def flow_reflect_prompt(app: App, mic: Path, headed: bool) -> None:
     )
 
 
+def flow_timeline_and_verify(app: App, mic: Path, headed: bool) -> None:
+    """V6: a session recorded through the real UI renders as a timeline and replays identically."""
+    with browser_page(app, mic, headed) as page:
+        start_game(page, "ls20")
+        page.keyboard.press("t")
+        page.keyboard.type("the grey square looks like a mirror of mine")
+        page.keyboard.press("Enter")
+        page.keyboard.press("h")
+        page.keyboard.type("stepping on the blue cross rotates it")
+        page.keyboard.press("Enter")
+        page.keyboard.press("Escape")
+        for key in ["ArrowRight", "ArrowUp", "ArrowUp", "ArrowLeft", "ArrowDown", "ArrowDown", "ArrowRight"]:
+            page.keyboard.press(key)
+            page.wait_for_timeout(120)
+        page.click(".hyp-row[data-hypothesis-id=h1] .no")
+        page.wait_for_selector(".hyp-row[data-hypothesis-id=h1][data-status=refuted]")
+        page.wait_for_selector(".final:not(.typed)", timeout=30_000)  # a spoken line, so there is speech too
+        end_session(page)
+
+    recordings = sorted(app.rec.glob("*ls20*.recording.jsonl"), key=lambda p: p.stat().st_mtime)
+    recording = recordings[-1]
+    env = {**os.environ, "ARC_ENVIRONMENTS_DIR": str(app.envs)}
+    cmd = [sys.executable, "-m", "backend.timeline", str(recording), "--verify"]
+    done = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
+    check(
+        "timeline --verify exits 0 on a browser-recorded session",
+        done.returncode == 0,
+        done.stderr.strip()[-160:],
+    )
+    rows = [json.loads(line) for line in recording.read_text().splitlines()]
+    check(
+        "recording is schema 3 with a frame hash on every step",
+        all(r.get("schema_version") == 3 and len(r.get("frame_sha256", "")) == 64 for r in rows),
+    )
+    check(
+        "every step was matched by frame hash",
+        f"{len(rows)} steps replayed, {len(rows)} matched by frame hash" in done.stderr,
+        done.stderr.strip()[-120:],
+    )
+    md = done.stdout
+    check("timeline shows the hypotheses table with h1 FALSE", "| h1 | FALSE |" in md)
+    check(
+        "timeline shows typed note, spoken line and phase change",
+        all(needle in md for needle in ("**note**", "**said**", "(auto_first_action)")),
+    )
+
+    # tamper: a different move must be caught at exactly that step
+    tampered = recording.with_name(recording.name.replace(".recording.", ".tampered.recording."))
+    rows[3]["action_id"] = 3 if rows[3]["action_id"] != 3 else 4
+    tampered.write_text("\n".join(json.dumps(r) for r in rows))
+    bad = subprocess.run(
+        cmd[:-2] + [str(tampered), "--verify"], cwd=ROOT, env=env, capture_output=True, text=True
+    )
+    check(
+        "a tampered move fails verification at that step",
+        bad.returncode == 1 and "VERIFY FAILED at step" in bad.stderr,
+        bad.stderr.strip()[-110:],
+    )
+
+
 FLOWS = {
     "picker_and_meter": flow_picker_and_meter,
     "heldout": flow_heldout,
     "notes_phases_mute_end": flow_notes_phases_mute_end,
     "hypotheses": flow_hypotheses,
     "reflect_prompt": flow_reflect_prompt,
+    "timeline_and_verify": flow_timeline_and_verify,
 }
 
 

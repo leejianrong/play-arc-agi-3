@@ -305,6 +305,9 @@ speech, and the verdict linked to the step where it died.
 
 ## V6: Timeline CLI and replay verification
 
+**Status (2026-10-14): built** (ARC-78 to ARC-81). `make e2e` records a session through the real UI, renders it,
+and replays it with every step matched by frame hash; a tampered move is caught. Guide: `docs/ANNOTATION-WORKFLOW.md`.
+
 **Delivers:** R12 (frame hash), R13
 
 **Build plan**

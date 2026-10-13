@@ -1,4 +1,4 @@
-.PHONY: help install run run-annotate e2e test lint check hooks download-games clean
+.PHONY: help install run run-annotate e2e timeline test lint check hooks download-games clean
 
 .DEFAULT_GOAL := help
 
@@ -7,6 +7,7 @@ help:
 	@echo "make run             - start the app; prints the URL to open. PORT=xxxx to prefer a port"
 	@echo "make run-annotate    - like run, plus the optional speech-to-text extra (faster-whisper) for annotated sessions"
 	@echo "make e2e             - drive the real app in headless Chromium with a fake mic (needs games + key; ARGS=\"--only hyp\" / --headed)"
+	@echo "make timeline       - render a session as a markdown timeline: FILE=recordings/x.recording.jsonl (default: latest) ARGS=--verify"
 	@echo "make test            - run the fast test layer (pytest + node --test), no infra needed"
 	@echo "make lint            - run ruff over backend/ main.py scripts/ tests/"
 	@echo "make check           - lint + test; what the pre-push hook runs"
@@ -27,6 +28,9 @@ run-annotate:
 
 e2e: install
 	uv run --with playwright python scripts/e2e.py $(ARGS)
+
+timeline: install
+	uv run python -m backend.timeline $(FILE) $(ARGS)
 
 test: install
 	uv run pytest

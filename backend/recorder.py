@@ -19,6 +19,7 @@ the user asked for one. Two modes:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import UTC, datetime
@@ -27,9 +28,15 @@ from typing import Literal
 
 from .game_sources.base import FrameData
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3  # v3 adds frame_sha256 (ADR-0007); v1/v2 files stay readable
 
 RecordingMode = Literal["lean", "full"]
+
+
+def frame_hash(frame: list) -> str:
+    """sha256 of a frame's canonical JSON. Recorded for every step, even in lean mode (where the grid
+    itself is omitted), so a replay can prove it reproduced exactly what the player saw."""
+    return hashlib.sha256(json.dumps(frame, separators=(",", ":")).encode()).hexdigest()
 
 
 def _safe_component(value: str) -> str:
@@ -61,6 +68,7 @@ class Recorder:
             "action_id": frame_data.action_input.id,
             "action_input": frame_data.action_input.data,
             "frame": frame_data.frame if self.mode == "full" else None,
+            "frame_sha256": frame_hash(frame_data.frame),
             "state": str(frame_data.state),
             "levels_completed": frame_data.levels_completed,
             "win_levels": frame_data.win_levels,

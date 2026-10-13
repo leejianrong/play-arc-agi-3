@@ -71,3 +71,25 @@ def test_step_count_tracks_appends(tmp_path):
     assert recorder.step_count == 0
     recorder.append(make_frame_data())
     assert recorder.step_count == 1
+
+
+def test_every_line_carries_frame_sha256_even_in_lean_mode(tmp_path):
+    from backend.recorder import frame_hash
+
+    for mode in ("lean", "full"):
+        recorder = Recorder(tmp_path, "local", "ls20", mode)
+        recorder.append(make_frame_data())
+        line = json.loads(recorder.path.read_text().strip())
+        assert line["frame_sha256"] == frame_hash([[[0] * 64 for _ in range(64)]])
+        assert len(line["frame_sha256"]) == 64
+
+
+def test_frame_hash_is_stable_and_sensitive_to_a_single_cell():
+    from backend.recorder import frame_hash
+
+    a = [[[0] * 64 for _ in range(64)]]
+    b = [[[0] * 64 for _ in range(64)]]
+    assert frame_hash(a) == frame_hash(b)
+    b[0][10][20] = 1
+    assert frame_hash(a) != frame_hash(b)
+    assert frame_hash(a) != frame_hash(a + a)  # layer count matters too
