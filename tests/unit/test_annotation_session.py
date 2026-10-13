@@ -26,7 +26,8 @@ def test_first_line_is_session_start_and_every_line_is_versioned_and_ordered(tmp
     assert evs[0]["kind"] == "session_start"
     assert evs[0]["data_use"] == "unclassified"
     assert evs[0]["game_id"] == "tst1"
-    assert [e["event_id"] for e in evs] == ["e1", "e2", "e3"]
+    assert [e["event_id"] for e in evs] == ["e1", "e2", "e3", "e4"]
+    assert evs[1]["kind"] == "phase_change" and evs[1]["phase"] == "observe"
     assert all(e["schema_version"] == 1 for e in evs)
 
 

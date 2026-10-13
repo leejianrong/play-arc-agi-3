@@ -1,0 +1,8 @@
+{
+  "_comment": "ADR-0009. 'public' = ARC's public ARC-AGI-3 games (reference-only for training). 'heldout' = never annotated, kept clean for evaluation. Anything not in 'public' is a custom env (train-ok). Ids are matched on the part before the first '-' (catalog ids look like r11l-495a7899). If this file is missing or malformed, annotation is refused.",
+  "public": [
+    "ar25", "bp35", "cd82", "cn04", "dc22", "ft09", "g50t", "ka59", "lf52", "lp85", "ls20", "m0r0", "r11l",
+    "re86", "s5i5", "sb26", "sc25", "sk48", "sp80", "su15", "tn36", "tr87", "tu93", "vc33", "wa30"
+  ],
+  "heldout": ["ar25", "cn04", "g50t", "lp85", "r11l", "sb26", "sp80", "tr87", "wa30"]
+}

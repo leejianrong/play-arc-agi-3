@@ -13,6 +13,7 @@ session's audio or blocks play (PLAN Q34).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from collections.abc import Awaitable, Callable
@@ -103,11 +104,24 @@ async def audio_endpoint(websocket: WebSocket, get_transcriber: GetTranscriber) 
             if message["type"] == "websocket.disconnect":
                 break
             if message.get("text") is not None:
-                if '"audio_start"' in message["text"]:
+                control = _control(message["text"])
+                if control.get("type") == "audio_start":
                     audio_t0_ms = session.now_ms()
+                elif control.get("type") == "mute":
+                    muted = bool(control.get("muted"))
+                    if muted and pipeline is not None:
+                        await pipeline.flush()  # keep what was said before the mute
+                    event = session.set_muted(muted)
+                    if event is not None:
+                        await send({"type": "mute", "muted": muted, "event_id": event["event_id"]})
+                elif control.get("type") == "audio_end":
+                    if pipeline is not None:
+                        await pipeline.aclose()
+                        pipeline = None
+                    await send({"type": "flushed"})
                 continue
             data = message.get("bytes")
-            if not data:
+            if not data or session.muted:  # a muted session records nothing, audio included
                 continue
             if data[0] == TAG_PCM and pipeline is not None:
                 await pipeline.feed(data[1:])
@@ -121,6 +135,14 @@ async def audio_endpoint(websocket: WebSocket, get_transcriber: GetTranscriber) 
                 await pipeline.aclose()
             except Exception:  # the socket is gone; the sidecar already has what was final
                 log.exception("audio pipeline shutdown failed")
+
+
+def _control(text: str) -> dict:
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _record_speech(session: AnnotationSession, u: Utterance, ms: Callable[[int], int]) -> dict:

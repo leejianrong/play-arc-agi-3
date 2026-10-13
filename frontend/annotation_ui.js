@@ -1,21 +1,57 @@
-// Live speech capture + transcript panel (ADR-0006). Owns the mic, the /ws/audio socket and the
-// DOM of the transcript panel. Every failure here is reported in the panel and never thrown into
-// the game: play, recording and (later) typed notes must keep working without a mic or model.
+// Live annotation: speech capture + transcript panel, typed notes, phase chips, mute (ADR-0006,
+// ADR-0008). Owns the mic, the /ws/audio socket and the panel DOM. Every failure here is reported in
+// the panel and never thrown into the game: play, recording and typed notes must keep working
+// without a mic or model.
 import { Chunker, Resampler, TAG_OPUS, TAG_PCM, TARGET_RATE, floatToPcm16, meterPercent, rms, tagFrame } from "/static/audio_utils.js";
+import { PHASES } from "/static/hotkeys.js";
 
-export function createAnnotationUI(panelEl) {
+const FLUSH_TIMEOUT_MS = 8000;
+
+export function createAnnotationUI(panelEl, { sendNote, sendPhase }) {
   const statusEl = panelEl.querySelector("[data-role=status]");
   const meterEl = panelEl.querySelector("[data-role=meter-fill]");
+  const muteEl = panelEl.querySelector("[data-role=mute]");
+  const phasesEl = panelEl.querySelector("[data-role=phases]");
   const finalsEl = panelEl.querySelector("[data-role=finals]");
   const interimEl = panelEl.querySelector("[data-role=interim]");
   const bannerEl = panelEl.querySelector("[data-role=banner]");
+  const noteEl = panelEl.querySelector("[data-role=note]");
 
   let socket = null;
   let stream = null;
   let audioCtx = null;
   let recorder = null;
   let capturing = false;
+  let muted = false;
+  let active = false;
   let generation = 0;
+  let flushWaiter = null;
+
+  const phaseChips = new Map();
+  for (const [i, phase] of PHASES.entries()) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "phase-chip";
+    chip.dataset.phase = phase;
+    chip.textContent = `${i + 1} ${phase}`;
+    chip.tabIndex = -1; // keep keyboard focus on the game
+    chip.addEventListener("click", () => sendPhase(phase));
+    phasesEl.appendChild(chip);
+    phaseChips.set(phase, chip);
+  }
+
+  noteEl.addEventListener("keydown", (event) => {
+    event.stopPropagation(); // typing must never reach the game or the hotkeys
+    if (event.key === "Enter") {
+      const text = noteEl.value.trim();
+      if (text) sendNote(text);
+      noteEl.value = "";
+      noteEl.blur();
+    } else if (event.key === "Escape") {
+      noteEl.value = "";
+      noteEl.blur();
+    }
+  });
 
   function setStatus(text) {
     statusEl.textContent = text;
@@ -26,22 +62,28 @@ export function createAnnotationUI(panelEl) {
     bannerEl.style.display = text ? "block" : "none";
   }
 
-  function addFinal(message) {
+  function stepsLabel(startStep, endStep) {
+    return startStep === endStep ? `step ${endStep}` : `steps ${startStep}→${endStep}`;
+  }
+
+  function addRow({ eventId, label, text, typed }) {
     const row = document.createElement("div");
-    row.className = "final";
-    row.dataset.eventId = message.event_id;
+    row.className = typed ? "final typed" : "final";
+    row.dataset.eventId = eventId;
     const steps = document.createElement("span");
     steps.className = "steps";
-    steps.textContent =
-      message.step_at_start === message.step_at_end
-        ? `step ${message.step_at_end}`
-        : `steps ${message.step_at_start}→${message.step_at_end}`;
-    const text = document.createElement("span");
-    text.textContent = message.text;
-    row.append(steps, text);
+    steps.textContent = label;
+    const body = document.createElement("span");
+    body.textContent = text;
+    row.append(steps, body);
     finalsEl.appendChild(row);
     finalsEl.scrollTop = finalsEl.scrollHeight;
-    interimEl.textContent = "";
+  }
+
+  function renderMuted() {
+    muteEl.textContent = muted ? "muted (M)" : "mic on (M)";
+    muteEl.classList.toggle("is-muted", muted);
+    if (muted) meterEl.style.width = "0%";
   }
 
   function onServerMessage(message) {
@@ -49,11 +91,21 @@ export function createAnnotationUI(panelEl) {
       if (message.state === "loading") setStatus("loading speech model… (first run downloads it)");
       else if (message.state === "ready") beginCapture(`listening · ${message.engine}`);
     } else if (message.type === "interim") {
-      interimEl.textContent = message.text;
+      if (!muted) interimEl.textContent = message.text;
     } else if (message.type === "final") {
-      addFinal(message);
+      interimEl.textContent = "";
+      addRow({
+        eventId: message.event_id,
+        label: stepsLabel(message.step_at_start, message.step_at_end),
+        text: message.text,
+      });
     } else if (message.type === "discard") {
       interimEl.textContent = "";
+    } else if (message.type === "mute") {
+      muted = message.muted;
+      renderMuted();
+    } else if (message.type === "flushed") {
+      if (flushWaiter) flushWaiter();
     } else if (message.type === "error") {
       banner(`Speech: ${message.message}`);
       // No model: keep recording raw audio so nothing is lost; there is just no live text.
@@ -77,6 +129,7 @@ export function createAnnotationUI(panelEl) {
       const resampler = new Resampler(audioCtx.sampleRate, TARGET_RATE);
       const chunker = new Chunker();
       node.port.onmessage = (event) => {
+        if (muted) return; // a muted mic sends nothing, and the meter stays flat
         const block = event.data;
         meterEl.style.width = `${meterPercent(rms(block))}%`;
         for (const chunk of chunker.push(resampler.process(block))) {
@@ -93,7 +146,7 @@ export function createAnnotationUI(panelEl) {
       if (mime) {
         recorder = new MediaRecorder(stream, { mimeType: mime });
         recorder.ondataavailable = async (event) => {
-          if (event.data.size && socket && socket.readyState === WebSocket.OPEN) {
+          if (!muted && event.data.size && socket && socket.readyState === WebSocket.OPEN) {
             socket.send(tagFrame(TAG_OPUS, await event.data.arrayBuffer()));
           }
         };
@@ -103,7 +156,7 @@ export function createAnnotationUI(panelEl) {
       setStatus(statusText);
     } catch (err) {
       capturing = false;
-      banner(`Microphone unavailable: ${err.message || err}. Play and recording continue.`);
+      banner(`Microphone unavailable: ${err.message || err}. Play, recording and typed notes continue.`);
       setStatus("mic off");
     }
   }
@@ -119,28 +172,87 @@ export function createAnnotationUI(panelEl) {
     meterEl.style.width = "0%";
   }
 
-  return {
+  function closeSocket() {
+    if (socket) {
+      socket.close();
+      socket = null;
+    }
+  }
+
+  const ui = {
+    get active() {
+      return active;
+    },
+
     start(sessionId) {
       this.stop();
       generation += 1;
+      active = true;
+      muted = false;
+      renderMuted();
+      this.setPhase("observe");
       panelEl.style.display = "flex";
       finalsEl.textContent = "";
       interimEl.textContent = "";
+      noteEl.value = "";
       banner("");
       setStatus("connecting…");
       socket = new WebSocket(`ws://${location.host}/ws/audio?session=${encodeURIComponent(sessionId)}`);
       socket.binaryType = "arraybuffer";
       socket.addEventListener("message", (event) => onServerMessage(JSON.parse(event.data)));
-      socket.addEventListener("close", () => setStatus("speech connection closed"));
+      socket.addEventListener("close", () => active && setStatus("speech connection closed"));
     },
+
     stop() {
       generation += 1;
+      active = false;
       stopMedia();
-      if (socket) {
-        socket.close();
-        socket = null;
-      }
+      closeSocket();
       panelEl.style.display = "none";
     },
+
+    // End of session: stop the mic, have the server finish the sentence in progress, then close.
+    async finish() {
+      if (!active) return;
+      stopMedia();
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        await new Promise((resolve) => {
+          flushWaiter = resolve;
+          setTimeout(resolve, FLUSH_TIMEOUT_MS);
+          socket.send(JSON.stringify({ type: "audio_end" }));
+        });
+        flushWaiter = null;
+      }
+      this.stop();
+    },
+
+    toggleMute() {
+      if (!active || !socket || socket.readyState !== WebSocket.OPEN) return;
+      muted = !muted;
+      renderMuted();
+      if (muted && recorder && recorder.state === "recording") recorder.pause();
+      if (!muted && recorder && recorder.state === "paused") recorder.resume();
+      socket.send(JSON.stringify({ type: "mute", muted }));
+      if (muted) interimEl.textContent = "";
+    },
+
+    focusNote() {
+      if (active) noteEl.focus();
+    },
+
+    setPhase(phase) {
+      for (const [name, chip] of phaseChips) chip.classList.toggle("is-current", name === phase);
+      panelEl.dataset.phase = phase;
+    },
+
+    addNote(message) {
+      addRow({
+        eventId: message.event_id,
+        label: `${stepsLabel(message.step_at_end, message.step_at_end)} ✎`,
+        text: message.text,
+        typed: true,
+      });
+    },
   };
+  return ui;
 }

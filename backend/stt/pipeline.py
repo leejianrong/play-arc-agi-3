@@ -60,6 +60,11 @@ class AudioPipeline:
             await self._handle(event)
         self._maybe_start_interim()
 
+    async def flush(self) -> None:
+        """Close the open utterance now (e.g. on mute) without shutting the pipeline down."""
+        for event in self._segmenter.flush():
+            await self._handle(event)
+
     async def aclose(self) -> None:
         """Flush the open utterance, finish queued finals, stop the worker."""
         for event in self._segmenter.flush():

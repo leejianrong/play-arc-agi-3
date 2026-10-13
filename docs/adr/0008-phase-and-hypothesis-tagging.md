@@ -62,3 +62,18 @@ Enter sends, Esc cancels, both return focus to the game).
   fixable by editing the sidecar.
 - New global key handling must not fire while the note box has focus.
 - Hotkeys are the only UI cost; no extra screens.
+
+## Implementation notes (V4, 2026-10-14)
+
+- Notes, phase changes and the end of a session travel on the session socket (`note`, `phase`, `end`);
+  mute and `audio_end` travel on the audio socket, because they act on the audio pipeline.
+- Muting flushes the sentence in progress, then drops PCM **and** the raw audio retention until
+  unmuted: a muted session records nothing. Each toggle is a `mute` event.
+- A speech event's `phase` is the phase at the moment the utterance **began**, so a prediction spoken
+  just before touching the game stays `observe`/`probe` as spoken, not whatever it became afterwards.
+- A level clear takes precedence over the auto-probe, so the clearing action does not flip the new
+  level straight to `probe`.
+- Held-out games remain playable. The picker tags them and starts them without annotation; the server
+  refuses annotation for them regardless (ADR-0009).
+- "End session" stops the mic, has the server finish the open sentence (`audio_end` -> `flushed`),
+  closes the annotation session and returns to the picker, showing the saved file names.

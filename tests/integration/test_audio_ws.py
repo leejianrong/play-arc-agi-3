@@ -126,7 +126,7 @@ def test_clatter_produces_no_events(monkeypatch, tmp_path):
             audio.receive_json()
             stream(audio, silence(300) + click() + silence(400) + click() + silence(800))
     assert fake.calls == []
-    assert [e["kind"] for e in sidecar(tmp_path)] == ["session_start"]
+    assert [e["kind"] for e in sidecar(tmp_path)] == ["session_start", "phase_change"]
 
 
 def test_opus_chunks_are_written_verbatim_to_the_audio_file(monkeypatch, tmp_path):
