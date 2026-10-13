@@ -62,6 +62,7 @@ async def audio_endpoint(websocket: WebSocket, get_transcriber: GetTranscriber) 
         await send({"type": "interim", "utterance_id": utterance_id, "text": text})
 
     async def on_final(u: Utterance) -> None:
+        version = session.hyp.version
         event = _record_speech(session, u, ms)
         await send(
             {
@@ -73,6 +74,8 @@ async def audio_endpoint(websocket: WebSocket, get_transcriber: GetTranscriber) 
                 "step_at_end": event["step_at_end"],
             }
         )
+        if session.hyp.version != version:  # this utterance became a hypothesis statement
+            await send({"type": "hypothesis_state", **session.hypothesis_state()})
 
     async def on_discard(utterance_id: int) -> None:
         await send({"type": "discard", "utterance_id": utterance_id})

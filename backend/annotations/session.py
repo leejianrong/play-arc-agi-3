@@ -14,6 +14,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from .hypotheses import HypothesisRegistry
 from .phases import PhaseChange, PhaseMachine
 
 SCHEMA_VERSION = 1
@@ -46,6 +47,7 @@ class AnnotationSession:
         self._step_ms: list[int] = []
         self._steps: list[tuple[int, int]] = []  # (step_index, level) parallel to _step_ms
         self.phases = PhaseMachine()
+        self.hyp = HypothesisRegistry()
         self.muted = False
         self._write(
             {
@@ -91,7 +93,8 @@ class AnnotationSession:
     def note(self, text: str) -> dict:
         now = self.now_ms()
         step, level = self.step_at(now)
-        return self._write(
+        captured = self._capture(text, now, step, level)
+        event = self._write(
             {
                 "kind": "text",
                 "source": "typed",
@@ -100,10 +103,12 @@ class AnnotationSession:
                 "step_at_end": step,
                 "level": level,
                 "phase": self.phases.phase,
-                "hypothesis_id": None,  # V5
+                "hypothesis_id": captured.id if captured else self.hyp.selected_at(now),
             },
             at_ms=now,
         )
+        self._write_hypothesis(captured, event, "typed", now)
+        return event
 
     def set_muted(self, muted: bool) -> dict | None:
         if muted == self.muted:
@@ -143,7 +148,8 @@ class AnnotationSession:
     ) -> dict:
         start_step, _ = self.step_at(start_ms)
         end_step, level = self.step_at(end_ms)
-        return self._write(
+        captured = self._capture(text, end_ms, end_step, level, end_ms=end_ms)
+        event = self._write(
             {
                 "kind": "speech",
                 "source": "stt",
@@ -152,10 +158,65 @@ class AnnotationSession:
                 "step_at_end": end_step,
                 "level": level,
                 "phase": self.phases.phase_at(start_ms),
-                "hypothesis_id": None,  # V5
+                "hypothesis_id": captured.id if captured else self.hyp.selected_at(start_ms),
                 "audio_offset_ms": list(audio_offset_ms),
             },
             at_ms=end_ms,
+        )
+        self._write_hypothesis(captured, event, "stt", end_ms)
+        return event
+
+    # -- hypotheses (ADR-0008) ------------------------------------------------------------
+
+    def hypothesis_state(self) -> dict:
+        return self.hyp.state()
+
+    def toggle_hypothesis(self) -> dict:
+        self.hyp.toggle_pending(self.now_ms())
+        return self.hyp.state()
+
+    def select_hypothesis(self, hypothesis_id: str) -> dict:
+        self.hyp.select(hypothesis_id, self.now_ms())
+        return self.hyp.state()
+
+    def verdict(self, verdict: str) -> dict:
+        now = self.now_ms()
+        h, previous = self.hyp.verdict(verdict, now)
+        step, level = self.step_at(now)
+        self._write(
+            {
+                "kind": "hypothesis_verdict",
+                "hypothesis_id": h.id,
+                "verdict": verdict,
+                "previous": previous,
+                "step_at_end": step,
+                "level": level,
+                "phase": self.phases.phase,
+            },
+            at_ms=now,
+        )
+        return self.hyp.state()
+
+    def _capture(self, text, now_ms, step, level, end_ms=None):
+        if not self.hyp.captures(now_ms if end_ms is None else end_ms):
+            return None
+        return self.hyp.capture(text, now_ms, step, level)
+
+    def _write_hypothesis(self, captured, source_event, source, at_ms) -> None:
+        if captured is None:
+            return
+        self._write(
+            {
+                "kind": "hypothesis",
+                "hypothesis_id": captured.id,
+                "statement": captured.statement,
+                "source": source,
+                "source_event_id": source_event["event_id"],
+                "step_at_end": captured.step,
+                "level": captured.level,
+                "phase": self.phases.phase_at(at_ms),
+            },
+            at_ms=at_ms,
         )
 
     def write_audio(self, chunk: bytes) -> None:

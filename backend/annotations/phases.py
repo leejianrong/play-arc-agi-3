@@ -1,9 +1,10 @@
 """Play-phase state machine (ADR-0008).
 
 Phases: observe (hands off), probe (touching the game to test something), plan, execute, reflect.
-A level starts in `observe`. The first game action while observing flips to `probe`, since touching
-the game is the signal. Clearing a level returns to `observe`. Everything else is declared by the
-player. Phase is a label, never a lock: no input is ever blocked.
+A level starts in `observe`. The first game action while observing (or reflecting, which is
+between-level talk) flips to `probe`, since touching the game is the signal. Clearing a level returns
+to `observe`. Everything else is declared by the player. Phase is a label, never a lock: no input is
+ever blocked.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ class PhaseMachine:
         self._levels = levels_completed
         if cleared:
             return self._set("observe", "level_cleared", at_ms)
-        if is_action and self.phase == "observe":
+        if is_action and self.phase in ("observe", "reflect"):
             return self._set("probe", "auto_first_action", at_ms)
         return None
 

@@ -19,6 +19,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .annotations.hypotheses import HypothesisError
 from .annotations.phases import PHASES, PhaseChange
 from .annotations.policy import load_policy
 from .annotations.session import AnnotationSession
@@ -26,7 +27,7 @@ from .config import api_key_from_env
 from .game_sources.arcade import ArcadeGameSource, close_arcade, list_games, make_arcade
 from .game_sources.base import FrameData, GameSourceError
 from .recorder import Recorder, recordings_dir_from_env
-from .stt.base import Transcriber
+from .stt.base import FakeTranscriber, Transcriber
 from .stt.endpoint import audio_endpoint
 from .stt.whisper import WhisperTranscriber
 
@@ -46,7 +47,12 @@ async def get_transcriber() -> Transcriber:
     global _transcriber
     async with _transcriber_lock:
         if _transcriber is None:
-            candidate = WhisperTranscriber()
+            # STT_ENGINE=fake is for the browser e2e (scripts/e2e.py): deterministic, no model download.
+            candidate = (
+                FakeTranscriber(["spoken thought"])
+                if os.environ.get("STT_ENGINE") == "fake"
+                else WhisperTranscriber()
+            )
             await asyncio.to_thread(candidate.load)  # raises TranscriberUnavailable
             _transcriber = candidate
         return _transcriber
@@ -58,6 +64,10 @@ def policy_from_env():
 
 def _phase_message(change: PhaseChange) -> dict:
     return {"type": "phase", "phase": change.phase, "previous": change.previous, "reason": change.reason}
+
+
+def _hypothesis_message(annotation: AnnotationSession) -> dict:
+    return {"type": "hypothesis_state", **annotation.hypothesis_state()}
 
 
 def _note_wire(event: dict) -> dict:
@@ -89,6 +99,7 @@ async def session(websocket: WebSocket) -> None:
     game_source: ArcadeGameSource | None = None
     recorder: Recorder | None = None
     annotation: AnnotationSession | None = None
+    last_levels = 0
 
     try:
         api_key = api_key_from_env()
@@ -156,6 +167,7 @@ async def session(websocket: WebSocket) -> None:
                     frame_data = await game_source.reset()
                     if recorder is not None:
                         recorder.append(frame_data)
+                    last_levels = frame_data.levels_completed
                     if annotation is not None:
                         annotation.mark_step(recorder.step_count - 1, frame_data.levels_completed)
                     await websocket.send_json({"type": "frame", "frame_data": frame_data.to_wire()})
@@ -184,14 +196,36 @@ async def session(websocket: WebSocket) -> None:
                     await websocket.send_json({"type": "frame", "frame_data": frame_data.to_wire()})
                     if change is not None:
                         await websocket.send_json(_phase_message(change))
+                    if annotation is not None and frame_data.levels_completed > last_levels:
+                        await websocket.send_json(
+                            {"type": "level_cleared", "level": frame_data.levels_completed}
+                        )
+                    last_levels = frame_data.levels_completed
 
                 elif msg_type == "note":
                     if annotation is None:
                         raise GameSourceError("notes need an annotated session")
                     text = str(message.get("text", "")).strip()
                     if text:
+                        version = annotation.hyp.version
                         event = annotation.note(text)
                         await websocket.send_json({"type": "note_saved", **_note_wire(event)})
+                        if annotation.hyp.version != version:  # this note became a hypothesis
+                            await websocket.send_json(_hypothesis_message(annotation))
+
+                elif msg_type in ("hypothesis_open", "hypothesis_verdict", "hypothesis_select"):
+                    if annotation is None:
+                        raise GameSourceError("hypotheses need an annotated session")
+                    try:
+                        if msg_type == "hypothesis_open":
+                            annotation.toggle_hypothesis()
+                        elif msg_type == "hypothesis_select":
+                            annotation.select_hypothesis(str(message.get("hypothesis_id")))
+                        else:
+                            annotation.verdict(str(message.get("verdict")))
+                    except HypothesisError as exc:
+                        raise GameSourceError(str(exc)) from exc
+                    await websocket.send_json(_hypothesis_message(annotation))
 
                 elif msg_type == "phase":
                     if annotation is None:
@@ -208,7 +242,7 @@ async def session(websocket: WebSocket) -> None:
                         saved["annotations"] = annotation.path.name
                         saved["audio"] = annotation.audio_path.name if annotation.keep_audio else None
                         annotation.close()
-                    annotation, recorder, game_source = None, None, None
+                    annotation, recorder, game_source, last_levels = None, None, None, 0
                     await websocket.send_json({"type": "ended", **saved})
 
                 else:

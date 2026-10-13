@@ -46,8 +46,17 @@ carry on. Tuning: `STT_MODEL` (default `small.en`; `base.en` is about 3x faster)
 
 While annotating: `1`-`5` set the phase (observe, probe, plan, execute, reflect; it starts at observe and
 flips to probe when you first touch the game), `T` opens the note box (Enter saves, Esc cancels), `M` mutes
-the mic (and its recording), and **end session** stops cleanly and shows where the files went. Held-out
+the mic (and its recording), `H` starts a hypothesis (say or type it next; `Y` confirmed, `N` refuted; click a chip
+to reselect it), and **end session** stops cleanly and shows where the files went. Held-out
 games (see `data_policy.json`) are tagged in the picker and are played without annotation. Measurements: `docs/STT-MEASUREMENTS.md`; design: ADR-0006 to ADR-0009.
+
+## Browser tests
+
+`make e2e` drives the real app in headless Chromium with a fake microphone (notes, phases, mute, hypotheses, the
+reflect prompt, held-out games) and asserts on what is rendered and what is written to disk. It needs `ARC_API_KEY`,
+downloaded games (`make download-games`) and a Playwright Chromium (`uvx playwright install chromium`, or set
+`PLAYWRIGHT_CHROMIUM`). It is not part of `make check` or CI. Use `ARGS="--only hyp"` to run one flow or
+`ARGS=--headed` to watch.
 
 ## Configuration
 

@@ -188,3 +188,89 @@ def test_end_flushes_last_utterance_closes_session_and_reports_files(monkeypatch
         ws.send_json({"type": "action", "action_id": 1})  # session is over
         assert ws.receive_json()["type"] == "error"
     assert [e["text"] for e in kinds(tmp_path, "speech")] == ["spoken thought"]
+
+
+def test_h_then_typed_note_makes_a_hypothesis_and_y_n_set_verdicts(monkeypatch, tmp_path):
+    client = client_for(monkeypatch, tmp_path)
+    with client.websocket_connect("/ws/session") as ws:
+        start_annotated(ws)
+        ws.send_json({"type": "hypothesis_open"})
+        state = ws.receive_json()
+        assert state["type"] == "hypothesis_state" and state["pending"] is True
+        ws.send_json({"type": "note", "text": "the green block opens the door"})
+        assert ws.receive_json()["type"] == "note_saved"
+        state = ws.receive_json()
+        assert state["pending"] is False and state["selected"] == "h1"
+        assert state["hypotheses"][0]["statement"] == "the green block opens the door"
+
+        ws.send_json({"type": "action", "action_id": 1})
+        ws.receive_json()
+        ws.receive_json()  # frame, probe
+        ws.send_json({"type": "hypothesis_verdict", "verdict": "refuted"})
+        state = ws.receive_json()
+        assert state["hypotheses"][0]["status"] == "refuted" and state["selected"] is None
+
+        ws.send_json({"type": "hypothesis_verdict", "verdict": "confirmed"})  # nothing selected
+        err = ws.receive_json()
+        assert err["type"] == "error" and "press H" in err["message"]
+
+        ws.send_json({"type": "hypothesis_select", "hypothesis_id": "h1"})
+        assert ws.receive_json()["selected"] == "h1"
+        ws.send_json({"type": "hypothesis_verdict", "verdict": "confirmed"})  # explicit reopen
+        assert ws.receive_json()["hypotheses"][0]["status"] == "confirmed"
+        ws.send_json({"type": "hypothesis_select", "hypothesis_id": "h9"})
+        assert ws.receive_json()["type"] == "error"
+    verdicts = [(e["verdict"], e["previous"]) for e in kinds(tmp_path, "hypothesis_verdict")]
+    assert verdicts == [("refuted", "open"), ("confirmed", "refuted")]
+    (hyp,) = kinds(tmp_path, "hypothesis")
+    assert hyp["source"] == "typed" and hyp["step_at_end"] == 0
+
+
+def test_hypothesis_actions_without_annotation_are_errors(monkeypatch, tmp_path):
+    client = client_for(monkeypatch, tmp_path)
+    with client.websocket_connect("/ws/session") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "start", "game_id": "tst1", "record": "off"})
+        ws.receive_json()
+        for msg in ("hypothesis_open", "hypothesis_verdict", "hypothesis_select"):
+            ws.send_json({"type": msg})
+            assert ws.receive_json()["type"] == "error"
+
+
+def test_speech_after_h_becomes_the_statement_and_audio_socket_pushes_state(monkeypatch, tmp_path):
+    client = client_for(monkeypatch, tmp_path)
+    with client.websocket_connect("/ws/session") as ws:
+        announce = start_annotated(ws)
+        ws.send_json({"type": "hypothesis_open"})
+        assert ws.receive_json()["pending"] is True
+        with client.websocket_connect(f"/ws/audio?session={announce['session_id']}") as audio:
+            audio.receive_json()
+            audio.receive_json()
+            audio.send_text(json.dumps({"type": "audio_start"}))
+            audio.send_bytes(PCM + silence(200) + speechlike(900) + silence(1300))
+            seen = drain_until(audio, "hypothesis_state")
+            assert seen[-1]["selected"] == "h1" and seen[-1]["hypotheses"][0]["statement"] == "spoken thought"
+    (hyp,) = kinds(tmp_path, "hypothesis")
+    assert hyp["source"] == "stt"
+    speech = kinds(tmp_path, "speech")[0]
+    assert speech["hypothesis_id"] == "h1" and hyp["source_event_id"] == speech["event_id"]
+
+
+def test_level_clear_sends_a_level_cleared_message_once_per_clear(monkeypatch, tmp_path):
+    client = client_for(monkeypatch, tmp_path, LevelStub)
+    with client.websocket_connect("/ws/session") as ws:
+        start_annotated(ws)
+        ws.send_json({"type": "action", "action_id": 1})
+        ws.receive_json()
+        ws.receive_json()  # frame, probe
+        ws.send_json({"type": "action", "action_id": 5})
+        assert ws.receive_json()["type"] == "frame"
+        assert ws.receive_json()["type"] == "phase"
+        assert ws.receive_json() == {"type": "level_cleared", "level": 1}
+        ws.send_json({"type": "action", "action_id": 1})  # ordinary move: frame + auto-probe only
+        assert ws.receive_json()["type"] == "frame"
+        assert ws.receive_json()["phase"] == "probe"
+        ws.send_json({"type": "action", "action_id": 5})
+        assert ws.receive_json()["type"] == "frame"
+        assert ws.receive_json()["phase"] == "observe"
+        assert ws.receive_json() == {"type": "level_cleared", "level": 2}

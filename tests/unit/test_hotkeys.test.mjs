@@ -19,7 +19,7 @@ test("M mutes and T focuses the note box, case-insensitively", () => {
 });
 
 test("other keys, including 0, 6 and game keys, are not annotation hotkeys", () => {
-  for (const k of ["0", "6", "a", "w", " ", "Enter", "ArrowUp", "Escape", "h"]) {
+  for (const k of ["0", "6", "a", "w", " ", "Enter", "ArrowUp", "Escape", "x"]) {
     assert.equal(annotationHotkey(k), null, k);
   }
 });
@@ -35,4 +35,11 @@ test("typing targets are inputs, textareas, selects and contenteditable only", (
   assert.equal(isTypingTarget({ tagName: "DIV", isContentEditable: true }), true);
   assert.equal(isTypingTarget({ tagName: "CANVAS" }), false);
   assert.equal(isTypingTarget(null), false);
+});
+
+test("H opens a hypothesis; Y confirms and N refutes, case-insensitively", () => {
+  assert.deepEqual(annotationHotkey("h"), { kind: "hypothesis" });
+  assert.deepEqual(annotationHotkey("H"), { kind: "hypothesis" });
+  assert.deepEqual(annotationHotkey("y"), { kind: "verdict", verdict: "confirmed" });
+  assert.deepEqual(annotationHotkey("N"), { kind: "verdict", verdict: "refuted" });
 });

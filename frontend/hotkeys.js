@@ -11,6 +11,9 @@ export function annotationHotkey(key) {
   }
   if (key === "m" || key === "M") return { kind: "mute" };
   if (key === "t" || key === "T") return { kind: "note" };
+  if (key === "h" || key === "H") return { kind: "hypothesis" };
+  if (key === "y" || key === "Y") return { kind: "verdict", verdict: "confirmed" };
+  if (key === "n" || key === "N") return { kind: "verdict", verdict: "refuted" };
   return null;
 }
 

@@ -7,7 +7,7 @@ import { PHASES } from "/static/hotkeys.js";
 
 const FLUSH_TIMEOUT_MS = 8000;
 
-export function createAnnotationUI(panelEl, { sendNote, sendPhase }) {
+export function createAnnotationUI(panelEl, { sendNote, sendPhase, sendHypothesisSelect }) {
   const statusEl = panelEl.querySelector("[data-role=status]");
   const meterEl = panelEl.querySelector("[data-role=meter-fill]");
   const muteEl = panelEl.querySelector("[data-role=mute]");
@@ -16,6 +16,10 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase }) {
   const interimEl = panelEl.querySelector("[data-role=interim]");
   const bannerEl = panelEl.querySelector("[data-role=banner]");
   const noteEl = panelEl.querySelector("[data-role=note]");
+  const hypothesesEl = panelEl.querySelector("[data-role=hypotheses]");
+  const promptEl = panelEl.querySelector("[data-role=prompt]");
+  const promptTextEl = panelEl.querySelector("[data-role=prompt-text]");
+  promptEl.querySelector("[data-role=prompt-dismiss]").addEventListener("click", () => hidePrompt());
 
   let socket = null;
   let stream = null;
@@ -52,6 +56,19 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase }) {
       noteEl.blur();
     }
   });
+
+  function hidePrompt() {
+    promptEl.style.display = "none";
+  }
+
+  function showPrompt(text) {
+    promptTextEl.textContent = text;
+    promptEl.style.display = "flex";
+  }
+
+  function onServerMessageHypotheses(message) {
+    ui.setHypotheses(message);
+  }
 
   function setStatus(text) {
     statusEl.textContent = text;
@@ -104,6 +121,8 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase }) {
     } else if (message.type === "mute") {
       muted = message.muted;
       renderMuted();
+    } else if (message.type === "hypothesis_state") {
+      onServerMessageHypotheses(message);
     } else if (message.type === "flushed") {
       if (flushWaiter) flushWaiter();
     } else if (message.type === "error") {
@@ -191,6 +210,8 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase }) {
       muted = false;
       renderMuted();
       this.setPhase("observe");
+      this.setHypotheses({ hypotheses: [], selected: null, pending: false });
+      hidePrompt();
       panelEl.style.display = "flex";
       finalsEl.textContent = "";
       interimEl.textContent = "";
@@ -243,6 +264,39 @@ export function createAnnotationUI(panelEl, { sendNote, sendPhase }) {
     setPhase(phase) {
       for (const [name, chip] of phaseChips) chip.classList.toggle("is-current", name === phase);
       panelEl.dataset.phase = phase;
+      // The level-clear prompt invites a reflection; once you're reflecting it just coaches, and any
+      // other phase means you've moved on.
+      if (phase === "reflect") {
+        showPrompt("Reflecting: what was the rule, what misled you, what would be faster? Press 1 to observe the next level.");
+      } else {
+        hidePrompt();
+      }
+    },
+
+    showLevelCleared(level) {
+      showPrompt(`Level ${level} cleared. Press 5 and say the rule, what misled you, and what would be faster.`);
+    },
+
+    setHypotheses(state) {
+      hypothesesEl.textContent = "";
+      if (state.pending) {
+        const pending = document.createElement("span");
+        pending.className = "hyp-chip pending";
+        pending.textContent = "H … say or type the hypothesis";
+        hypothesesEl.appendChild(pending);
+      }
+      for (const h of state.hypotheses) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.tabIndex = -1; // keep keyboard focus on the game
+        chip.className = `hyp-chip ${h.status}${h.id === state.selected ? " is-selected" : ""}`;
+        chip.dataset.hypothesisId = h.id;
+        chip.dataset.status = h.status;
+        chip.title = `${h.id} (${h.status}) · stated at step ${h.step}: ${h.statement}`;
+        chip.textContent = `${h.id} ${h.statement}`;
+        chip.addEventListener("click", () => sendHypothesisSelect(h.id));
+        hypothesesEl.appendChild(chip);
+      }
     },
 
     addNote(message) {

@@ -77,3 +77,22 @@ Enter sends, Esc cancels, both return focus to the game).
   refuses annotation for them regardless (ADR-0009).
 - "End session" stops the mic, has the server finish the open sentence (`audio_end` -> `flushed`),
   closes the annotation session and returns to the picker, showing the saved file names.
+
+## Implementation notes (V5, 2026-10-14)
+
+- **Hypothesis capture.** `H` arms a pending hypothesis (pressing `H` again cancels). The next typed note, or
+  the next spoken sentence that *ends* after the press, becomes its statement, so a sentence already under
+  way when you hit `H` still counts. The statement is also stored as a normal `text`/`speech` event, tagged
+  with the new id; a separate `hypothesis` event links to it by `source_event_id`.
+- **Verdicts.** `Y`/`N` act on the selected hypothesis and write `hypothesis_verdict` with `previous`
+  (`open`, or the earlier verdict). Selection then falls back to the most recent other open hypothesis, or
+  to none. Giving a verdict to an already-closed hypothesis requires clicking its chip first, which is the
+  explicit reopen; `previous` records it.
+- **Tagging uses selection at utterance start.** Transcripts arrive seconds after speech, so "no, it
+  didn't" said about h1 stays filed under h1 even if `N` was pressed (and selection moved) before the text
+  landed.
+- **Reflect (amends the "no other automatic transitions" rule).** A level clear sends `level_cleared` and
+  the UI shows a non-blocking prompt inviting `5` (reflect). Because reflect is between-level talk, the first
+  game action while in `reflect` now flips to `probe` (like `observe`); otherwise a forgotten `1` would
+  leave the next level mislabelled `reflect`.
+- A first action that itself clears a level never passes through `probe`: the level clear wins.
