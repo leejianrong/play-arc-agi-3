@@ -11,11 +11,15 @@ input. `uv` manages the Python env; the Makefile is the command surface.
 backend/
   server.py            WebSocket session loop: start/action -> GameSource -> Recorder
   config.py            ARC_API_KEY loading
-  recorder.py          JSONL session recorder (ADR-0003, ADR-0005: opt-in, off by default)
+  recorder.py          JSONL session recorder (ADR-0003, ADR-0005: opt-in; schema 3 adds frame_sha256)
+  timeline.py          `make timeline`: recording + annotations -> markdown; `--verify` replays (ADR-0007)
+  annotations/         session sidecar writer, phase machine, hypothesis registry, data policy (ADR-0007..0009)
+  stt/                 Transcriber protocol, faster-whisper engine, VAD segmenter, /ws/audio (ADR-0006)
   game_sources/
     base.py            GameSource protocol, FrameData, GameState/ActionId
     arcade.py           ArcadeGameSource -- the one execution path (see HOW)
-frontend/               index.html, app.js, input_mapping.js, palette.js -- no build step
+frontend/               index.html, app.js, annotation_ui.js, hotkeys.js, audio_*.js, ... -- no build step
+scripts/                download_all_games.py, e2e.py (`make e2e`: headless Chromium + fake mic)
 docs/                   PLAN.md, adr/, SLICES.md, QUESTIONS.md -- the design record
 tests/
   unit/                 no infra; arcade tests run a real fixture game (tests/fixtures/)
@@ -73,7 +77,7 @@ on disk, not only DOM state. `STT_ENGINE=fake` and `ARC_ENVIRONMENTS_DIR` exist 
 
 - `.env` (`ARC_API_KEY`) — never log it, never write it into a recording, never
   put it in a commit message or test fixture.
-- `recordings/` and `environment_files/` — gitignored caches (session recordings;
+- `recordings/` (sessions, **including raw voice audio**) and `environment_files/` — gitignored caches (session recordings;
   downloaded/cached game source). Both regenerate from a live run; neither belongs
   in git.
 

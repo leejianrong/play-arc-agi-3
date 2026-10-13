@@ -51,6 +51,16 @@ the game; add several in a row) or turn on **dictate** (`V`) so each sentence yo
 **true / false** with its buttons whenever you know, in any order (`Y`/`N` mark the one marked "testing"), and **end session** stops cleanly and shows where the files went. Held-out
 games (see `data_policy.json`) are tagged in the picker and are played without annotation. Measurements: `docs/STT-MEASUREMENTS.md`; design: ADR-0006 to ADR-0009.
 
+## Reviewing a session
+
+```sh
+make timeline                       # latest annotated session as a markdown timeline
+make timeline ARGS="--verify"       # ...and replay the moves locally, comparing every step
+```
+
+Fix a transcript or hide a line (`"ignore": true`) by editing the `*.annotations.jsonl` by hand. Details, file
+layout and the playing protocol: `docs/ANNOTATION-WORKFLOW.md`.
+
 ## Browser tests
 
 `make e2e` drives the real app in headless Chromium with a fake microphone (notes, phases, mute, hypotheses, the
