@@ -136,7 +136,7 @@ class App:
 
 
 @contextmanager
-def browser_page(app: App, mic: Path, headed: bool):
+def browser_page(app: App, mic: Path, headed: bool, viewport: tuple[int, int] = (900, 1100)):
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -150,7 +150,7 @@ def browser_page(app: App, mic: Path, headed: bool):
                 f"--use-file-for-fake-audio-capture={mic}",
             ],
         )
-        page = browser.new_page(viewport={"width": 900, "height": 1100})
+        page = browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
         page.goto(app.url)
         page.wait_for_selector(".picker-row", timeout=60_000)
         try:
@@ -563,6 +563,125 @@ def flow_timeline_and_verify(app: App, mic: Path, headed: bool) -> None:
     )
 
 
+def _box(page, selector: str) -> dict:
+    return page.eval_on_selector(
+        selector,
+        "e => { const r = e.getBoundingClientRect();"
+        " return {x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom}; }",
+    )
+
+
+def _page_scrolls(page) -> tuple[bool, bool]:
+    return tuple(
+        page.evaluate(
+            "() => [document.documentElement.scrollHeight > innerHeight + 1,"
+            " document.documentElement.scrollWidth > innerWidth + 1]"
+        )
+    )
+
+
+def flow_layout(app: App, mic: Path, headed: bool) -> None:
+    """The play screen at real laptop sizes: grid left, panel right, nothing below the fold."""
+    # 1366x768 laptop: the page itself gets ~650px once browser chrome is subtracted
+    for name, size in (("1366x650 laptop page", (1366, 650)), ("1920x1000 desktop", (1920, 1000))):
+        with browser_page(app, mic, headed, viewport=size) as page:
+            start_game(page, "ls20")
+            # Fill the panel the way a real session does: many hypotheses and many transcript lines.
+            page.keyboard.press("h")
+            for i in range(9):
+                page.keyboard.type(f"hypothesis number {i + 1} about how the squares interact")
+                page.keyboard.press("Enter")
+            page.keyboard.press("Escape")
+            for i in range(14):
+                page.evaluate(
+                    "t => { const f = document.querySelector('[data-role=finals]');"
+                    " const d = document.createElement('div');"
+                    " d.className = 'final'; d.textContent = t; f.appendChild(d); }",
+                    f"a long spoken sentence number {i} that goes on a little so rows wrap sometimes",
+                )
+            grid, panel = _box(page, "#grid"), _box(page, "#transcript")
+            tag = f"[{name}] "
+            check(
+                tag + "grid and panel are side by side",
+                panel["x"] >= grid["right"] - 1 and panel["y"] < grid["bottom"],
+                f"grid right={grid['right']:.0f} panel x={panel['x']:.0f}",
+            )
+            check(
+                tag + "page does not scroll, vertically or horizontally",
+                _page_scrolls(page) == (False, False),
+            )
+            check(
+                tag + "grid cells are a whole number of pixels",
+                grid["w"] % 64 == 0 and grid["h"] % 64 == 0,
+                f"{grid['w']:.0f}px",
+            )
+            for label, sel in (
+                ("phase chips", ".phases"),
+                ("hypotheses box", "[data-role=hyp-add]"),
+                ("transcript", "[data-role=finals]"),
+                ("note box", "[data-role=note]"),
+                ("end-session button", "#end"),
+                ("grid", "#grid"),
+            ):
+                b = _box(page, sel)
+                check(
+                    tag + f"{label} is fully inside the window",
+                    b["h"] > 0 and b["y"] >= 0 and b["bottom"] <= size[1] and b["right"] <= size[0],
+                    f"{b['y']:.0f}..{b['bottom']:.0f} of {size[1]}",
+                )
+            lists = page.evaluate(
+                "() => ['[data-role=hyp-list]', '[data-role=finals]'].map(s => {"
+                " const e = document.querySelector(s);"
+                " return [e.scrollHeight > e.clientHeight, getComputedStyle(e).overflowY]; })"
+            )
+            check(
+                tag + "a long hypotheses list and transcript scroll inside the panel",
+                lists[0][0] and lists[1][0] and lists[0][1] == "auto" and lists[1][1] == "auto",
+                str(lists),
+            )
+
+            top_before = _box(page, "#grid")["y"]
+            page.keyboard.press(
+                "n"
+            )  # nothing is being tested? h9 is, so first clear: error comes from a bad action
+            page.evaluate("() => document.getElementById('error').textContent = 'x'.repeat(200)")
+            page.evaluate("() => { const e = document.getElementById('error'); e.style.display = 'block'; }")
+            check(
+                tag + "an error banner overlays instead of pushing the grid",
+                _box(page, "#grid")["y"] == top_before and _page_scrolls(page) == (False, False),
+            )
+            end_session(page)
+
+    with browser_page(app, mic, headed, viewport=(800, 900)) as page:
+        start_game(page, "ls20")
+        grid, panel = _box(page, "#grid"), _box(page, "#transcript")
+        check(
+            "[800px wide] narrow screens stack the panel under the grid",
+            panel["y"] >= grid["bottom"] - 1,
+            f"grid bottom={grid['bottom']:.0f} panel y={panel['y']:.0f}",
+        )
+        check("[800px wide] no horizontal overflow", _page_scrolls(page)[1] is False)
+        end_session(page)
+
+    with browser_page(app, mic, headed, viewport=(1366, 650)) as page:
+        start_game(page, "tst1")
+        grid = _box(page, "#grid")
+        cell = (grid["w"] - 2) / 64  # the canvas has a 1px border on each side
+        targets = [(0, 0), (63, 63), (32, 32), (10, 50), (31, 31), (63, 0)]
+        for cx, cy in targets:  # click the middle of each target cell, and also each cell's edges
+            page.mouse.click(grid["x"] + 1 + (cx + 0.5) * cell, grid["y"] + 1 + (cy + 0.5) * cell)
+            page.wait_for_timeout(120)
+        recording = sorted(app.rec.glob("*tst1*.recording.jsonl"))[-1]
+        rows = [json.loads(line) for line in recording.read_text().splitlines()]
+        got = [(r["action_input"]["x"], r["action_input"]["y"]) for r in rows if r["action_id"] == 6]
+        check(
+            "clicking the middle of cells on the scaled grid maps to exactly those cells",
+            got == targets,
+            f"{got}",
+        )
+        end_session(page)
+
+
 FLOWS = {
     "picker_and_meter": flow_picker_and_meter,
     "heldout": flow_heldout,
@@ -570,6 +689,7 @@ FLOWS = {
     "hypotheses": flow_hypotheses,
     "reflect_prompt": flow_reflect_prompt,
     "timeline_and_verify": flow_timeline_and_verify,
+    "layout": flow_layout,
 }
 
 

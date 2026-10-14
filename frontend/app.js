@@ -161,11 +161,13 @@ function startGame(gameId, heldOut = false) {
   pickerEl.style.display = "none";
   controlsEl.style.display = "none";
   playEl.style.display = "flex";
+  document.body.classList.add("playing");
 }
 
 function showPicker() {
   annotation.stop();
   playEl.style.display = "none";
+  document.body.classList.remove("playing");
   pickerEl.style.display = "flex";
   controlsEl.style.display = "flex";
   frameSeen = false;
@@ -231,12 +233,13 @@ window.addEventListener("keydown", (event) => {
 });
 
 canvas.addEventListener("click", (event) => {
+  // Measure the drawing area, not the box: the canvas has a 1px border that is not part of the grid.
   const rect = canvas.getBoundingClientRect();
   const { x, y } = clickToGridCoords(
-    event.clientX - rect.left,
-    event.clientY - rect.top,
-    rect.width,
-    rect.height
+    event.clientX - rect.left - canvas.clientLeft,
+    event.clientY - rect.top - canvas.clientTop,
+    canvas.clientWidth,
+    canvas.clientHeight
   );
   sendAction(6, x, y);
 });

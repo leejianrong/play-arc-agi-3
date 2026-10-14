@@ -146,7 +146,8 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | Keyboard: arrows/WASD, space, backspace, R | Play screen | WS `action {id}` → `GameSource.step()` |
 | Mouse click on grid | Play screen | WS `action {id: 6, data: {x,y}}`, coordinates scaled to 0-63 |
 | Status/state header (score, levels, GameState) | Play screen | Renders latest `FrameData` metadata fields |
-| Error banner | Play screen | WS error events (API failures, missing key, local env exceptions) |
+| Error banner (an overlay, so it never moves the grid) | Any screen | WS error events (API failures, missing key, local env exceptions) |
+| Two-column play screen: grid left, annotation panel right (scrolls inside itself) at >= 1000px; stacked below that; grid steps 512/448/384px by window height so cells stay whole pixels | Play screen | CSS only; `make e2e` flow `layout` |
 | Annotate toggle in the picker (default off; requires Lean or Full, promotes Off to Lean) | Landing screen | WS `start {…, annotate: true}` |
 | Live transcript panel: interim text greyed, finals appended, mic level meter, muted indicator | Play screen | `/ws/audio` interim/final messages |
 | Phase chip (observe / probe / plan / execute / reflect), keys `1-5` | Play screen | Phase state machine; `phase_change` events |

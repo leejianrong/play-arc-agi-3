@@ -13,6 +13,7 @@
       --fg-dim: #8b93a1;
       --danger: #3a1518;
       --danger-fg: #ffb4b4;
+      --grid: 512px; /* 64 cells x 8px; stepped down in whole cells per pixel below, never fractionally */
       --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
       --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
@@ -80,8 +81,6 @@
       padding: 8px 14px;
       font-family: var(--mono);
       font-size: 12px;
-      width: 100%;
-      max-width: 640px;
     }
 
     #picker {
@@ -156,8 +155,16 @@
       display: none;
       flex-direction: column;
       align-items: center;
+      gap: 16px;
+      padding: 8px 16px 16px;
+    }
+
+    .stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       gap: 8px;
-      padding: 8px 16px 32px;
+      flex: none;
     }
 
     #header {
@@ -169,6 +176,8 @@
     }
 
     canvas#grid {
+      width: var(--grid);
+      height: var(--grid);
       image-rendering: pixelated;
       border: 1px solid var(--line);
       cursor: crosshair;
@@ -190,8 +199,7 @@
       display: none;
       flex-direction: column;
       gap: 6px;
-      width: 512px;
-      max-width: 100%;
+      width: min(512px, 100%);
       background: var(--panel);
       border: 1px solid var(--line);
       padding: 10px 12px;
@@ -357,8 +365,6 @@
       padding: 8px 14px;
       font-family: var(--mono);
       font-size: 12px;
-      width: 100%;
-      max-width: 640px;
       word-break: break-all;
     }
 
@@ -379,8 +385,41 @@
       font-family: var(--mono);
       font-size: 11px;
       color: var(--fg-dim);
-      max-width: 512px;
+      max-width: var(--grid);
       text-align: center;
+    }
+
+    /* Overlays, not layout: a banner appearing mid-game must not shove the grid down. */
+    #error, #notice {
+      position: fixed;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: min(640px, calc(100% - 32px));
+    }
+
+    /* Short windows (a 768px laptop leaves ~650px of page): step the grid down by whole cells. */
+    @media (max-height: 740px) { :root { --grid: 448px; } }
+    @media (max-height: 640px) { :root { --grid: 384px; } }
+
+    /* Wide: grid on the left, annotation panel beside it, scrolling inside itself, so nothing
+       you need while playing falls below the fold. Narrow screens keep the stacked layout. */
+    @media (min-width: 1000px) {
+      .playing .topbar { max-width: 980px; }
+      #play { flex-direction: row; align-items: flex-start; justify-content: center; }
+      #transcript {
+        width: 440px;
+        flex: none;
+        height: calc(100vh - 96px);
+        min-height: 380px;
+        position: sticky;
+        top: 8px;
+        overflow: hidden;
+      }
+      #transcript .hyp-section { flex: 0 1 auto; min-height: 0; max-height: 52%; }
+      #transcript .hyp-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+      #transcript .finals { flex: 1 1 0; min-height: 60px; max-height: none; }
     }
   </style>
 </head>
@@ -411,12 +450,15 @@
   </div>
 
   <div id="play">
+    <div class="stage">
     <div id="header">
       <span id="state"></span>
       <span id="levels"></span>
       <button id="end" type="button" title="Stop the mic, save the last sentence, and return to the game list">end session</button>
     </div>
     <canvas id="grid" width="512" height="512"></canvas>
+    <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset<br>Annotating: 1-5 = phase · H = add a hypothesis · V = dictate hypotheses · Y/N = mark the one being tested true/false · T = note · M = mute</p>
+    </div>
     <div id="transcript" data-testid="transcript">
       <div class="head">
         <span data-role="status">idle</span>
@@ -450,7 +492,6 @@
       <div class="interim" data-role="interim"></div>
       <input class="note" data-role="note" type="text" maxlength="500" placeholder="press T to type a note, Enter to save, Esc to cancel" autocomplete="off" />
     </div>
-    <p id="hint">Arrows/WASD = move · Space/Enter = act · Click = target · Backspace = undo · R = reset<br>Annotating: 1-5 = phase · H = add a hypothesis · V = dictate hypotheses · Y/N = mark the one being tested true/false · T = note · M = mute</p>
   </div>
 
   <script type="module" src="/static/app.js"></script>
