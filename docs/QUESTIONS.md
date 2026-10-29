@@ -46,6 +46,7 @@ _empty — round closed_
 | Q33 | Initial held-out list? | ASSUMED | Every third public game in sorted order; should be reconciled with the solver's eval split | ADR-0009 |
 | Q34 | Annotation failure behaviour? | ASSUMED | Mic, model or `/ws/audio` failure shows a banner and play, recording and typed notes continue; truncated sidecars stay readable | PLAN §Open risks, SLICES V3 |
 | Q35 | Sensitive data in annotations? | ASSUMED | Voice audio and transcripts are local only and gitignored; no API key in any annotation file; no cloud STT | ADR-0006 |
+| Q36 | What is one training example? | DECIDED | A decision point: state (observation text, ledger, history) in; reasoning, ledger ops and the action chunk out; silent chunks are not examples | ADR-0010 |
 
 ## Coverage
 
@@ -53,7 +54,7 @@ _empty — round closed_
 |----------|-----------|
 | Primary user and actors | Q4, Q25 |
 | Scope boundary | Q2, Q5, Q28 |
-| Data model and identity | Q3, Q14, Q26, Q27, Q30 |
+| Data model and identity | Q3, Q14, Q26, Q27, Q30, Q36 |
 | State and storage | Q6, Q7, Q29, Q31 |
 | Concurrency and conflict | Q7 |
 | Interfaces and contracts | Q1, Q8, Q9, Q10, Q11, Q32 |

@@ -349,3 +349,45 @@ any real game is evidence it is wrong for that game.
 - `frame_sha256` is stable for identical frames and differs for a one-cell
   change.
 - Timeline rendering handles truncated final JSONL lines and unknown event kinds.
+
+
+## V7: Export annotated sessions as fine-tuning data
+
+**Status (2026-10-30): planned.** ARC-E33 on the board. Decision made: ADR-0010 (a training example is a decision
+point). Delivers the exporter that `PLAN.md` listed as out of scope until there was data and a format.
+
+**Build plan**
+
+1. Decide the example format (ADR-0010, `docs/examples/training-example.md`). **Done.**
+2. Rebuild every step's frame by replay and refuse sessions that differ from their recorded hashes (ARC-86).
+3. Render a frame as a compact text observation with a measured token cost (ARC-87).
+4. Pair each thought with the action chunk it led to, with phase and a hypothesis-ledger snapshot (ARC-88).
+5. `make export`: JSONL, `train-ok` only by default, held-out always refused, public games only behind an explicit
+   flag (ARC-89).
+6. Manifest with provenance and a split by game (ARC-90).
+7. Independent: re-transcribe kept audio (ARC-91); author custom games, the data bottleneck (ARC-92); ledger-format
+   export for the solver (ARC-93).
+
+**Demo:** `make export` over a few custom-game sessions writes `dataset.jsonl` and `manifest.json`; the report
+shows examples per phase and hypothesis outcomes; running it on a held-out or public session refuses.
+
+**Rests on assumptions:** ADR-0010's unit of an example. If the first fine-tuning pilot (solver ADR-0012) shows
+decision points are the wrong grain, the replay, observation and policy pieces are reused unchanged.
+
+### Test plan
+
+#### End-to-end
+
+- Export from a session recorded through the browser produces examples whose actions match the recording and whose
+  hashes verify.
+- A held-out, public or unverified session is refused with a non-zero exit code.
+
+#### Integration
+
+- A session with hypotheses yields `ledger_ops` and a ledger snapshot that match the sidecar's events.
+- The split never puts one game in both sets.
+
+#### Unit
+
+- Grouping: events at one step merge; silent chunks are dropped; trailing thoughts keep `actions: []`.
+- Observation rendering is deterministic.
