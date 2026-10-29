@@ -68,8 +68,9 @@ Single primary user: you, playing solo, locally. No multi-user story, no
 accounts beyond your own ARC API key.
 
 **Agent actor (from 2026-10-30).** Claude Code can also play, through an MCP
-server (ADR-0011). It is a second, separate actor: it never shares a session
-with you, its sessions are labelled `agent` and kept out of the human dataset
+endpoint inside the app (ADR-0011). It is a second, separate actor: it never
+shares a session with you (a session is human-owned or agent-owned; you watch the
+agent's live), its sessions are labelled `agent` and kept out of the human dataset
 (ADR-0012), and held-out games need an explicit flag. When the two conflict,
 the human data policy wins.
 
@@ -97,9 +98,9 @@ the human data policy wins.
   slice V7 (ADR-0010: a training example is a decision point).
 - Cloud speech-to-text, speaker diarization, multi-person sessions.
 
-**Agent play (V8-V10).** In: a standalone MCP server with a text observation, optional PNG, move/click/reset,
-reasoning tools, an action budget, recording in the human format, and the `agent` label (R15-R19). Out: a shared
-live session between you and the agent (deferred: two writers need a concurrency design), our own API-driven agent
+**Agent play (V8-V10).** In: an MCP endpoint in the app (`/mcp`) with a text observation, optional PNG, move/click/reset,
+reasoning tools, an action budget, recording in the human format, and the `agent` label (R15-R19). In also: a read-only spectator view of an agent's game in the browser. Out: a shared
+live session where you and the agent both move (deferred: two writers need a concurrency design), our own API-driven agent
 loop or batch evaluation harness, and any use of agent traces as training data.
 - Agent play, scorecards, or anything competition-submission-related — this
   is a human-play tool.
@@ -148,7 +149,7 @@ loop or batch evaluation harness, and any use of agent traces as training data.
 | S8 | Phase state machine (observe → probe auto on first action; hotkeys for the rest) and hypothesis registry with stable IDs | ADR-0008 |
 | S9 | `Recorder` gains `frame_sha256` (schema 3); `make timeline` CLI merges recording + annotations and replays with `--verify` | ADR-0007 |
 | S10 | `data_policy.json` + `data_use` label on `session_start`; annotation refused for held-out games | ADR-0009 |
-| S11 | `backend/mcp_server.py`: stdio MCP server (optional `agent` extra) with game and reasoning tools over `ArcadeGameSource` | ADR-0011 |
+| S11 | `backend/mcp_server.py`: MCP server mounted at `/mcp` in the app, game and reasoning tools over the shared session manager and `ArcadeGameSource` | ADR-0011 |
 | S12 | Observation encoder: native-resolution text (legend, header, changes since last), and a pure-Python PNG with the app palette | ADR-0011 |
 | S13 | Agent session manager: one session, action budget, `agent.` recordings, `data_use: agent`, held-out guard | ADR-0011, ADR-0012 |
 
@@ -182,7 +183,7 @@ loop or batch evaluation harness, and any use of agent traces as training data.
 | `AnnotationWriter` | handler | Appends to `*.annotations.jsonl` |
 | `make timeline FILE=… [--verify]` | CLI | Recording + annotations → markdown; replay against `frame_sha256` |
 | MCP tools `list_games`, `start_game`, `observe`, `act`, `reset`, `end_session`, `note`, `hypothesis_add`, `hypothesis_verdict`, `set_phase` | MCP server (agent-facing) | `ArcadeGameSource`, `Recorder`, `AnnotationSession` |
-| `make mcp` | CLI | Runs the MCP server by hand (Claude Code starts it from `.mcp.json`) |
+| `/mcp` | HTTP (MCP) | Agent endpoint, served by `make run`; Claude Code connects via `.mcp.json` |
 
 ## Implementation decisions
 
@@ -278,7 +279,7 @@ assert.
   is several thousand characters per step. Slice V8 measures it first; if too high the encoder needs object
   summaries (ARC-87) before agent play on real games is practical.
 - **The restart.** A new MCP server is only visible to Claude Code after a restart, so the first real agent run
-  (V10) is gated on the user restarting once. Everything before it is tested with a Python MCP client.
+  (V10) is gated on the user restarting once, with `make run` up. Everything before it is tested with a Python MCP client over HTTP.
 - **Spoilers.** An agent that can read `custom_games/` is not playing blind; V10's results state how it was run.
 - **Habit drift.** The protocol only helps if followed; phase labels and
   prediction/result phrasing degrade as you tire. The timeline CLI is how this

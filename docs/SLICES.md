@@ -398,7 +398,7 @@ decision points are the wrong grain, the replay, observation and policy pieces a
 
 # Agent play (V8-V10)
 
-Added 2026-10-30. Claude Code drives games through a standalone MCP server (ADR-0011); agent sessions are labelled
+Added 2026-10-30. Claude Code drives games through an MCP endpoint inside the app (ADR-0011), watched live in the browser; agent sessions are labelled
 `agent` and kept out of human data (ADR-0012). V8 confronts the riskiest unknown: whether a model can play through
 tools at an affordable token cost per step.
 
@@ -411,16 +411,18 @@ tools at an affordable token cost per step.
 1. Text observation encoder at native resolution: detect the integer upscale and any letterbox, one character per
    cell, legend of colours present, header, changes since the last observation (capped). Measure characters and
    estimated tokens per step on the five custom games and one real game.
-2. Agent session manager: one session over `ArcadeGameSource`, `Recorder` (lean) and the annotation sidecar with
-   `data_use: agent`; action budget; held-out refused unless allowed.
-3. MCP tools `list_games`, `start_game`, `observe`, `act`, `reset`, `end_session` on the `mcp` SDK (optional
-   `agent` extra), with specific error messages.
-4. `.mcp.json` entry, `make mcp`, and a Python MCP client test harness that speaks to the real server over stdio.
-   `mcp` goes in the `dev` dependency group as well as the optional `agent` extra, so `make check` and CI run the
-   protocol tests (the extra is only for running the server by hand).
+2. Session manager shared by the WebSocket loop and MCP: an owner (`human` or `agent`), `ArcadeGameSource`,
+   `Recorder` (lean) and the annotation sidecar with `data_use: agent`; action budget; held-out refused unless allowed.
+   The existing human path is moved onto it with no behaviour change (`make e2e` stays green).
+3. MCP tools `list_games`, `start_game`, `observe`, `act`, `reset`, `end_session` on the `mcp` SDK (v2, streamable
+   HTTP), mounted at `/mcp` in the app, with specific error messages. `mcp` is a normal dependency.
+4. Spectator view: a `/ws/watch` socket broadcasts an agent session's frames and state; the browser shows it
+   read-only with input disabled and an "agent is playing" banner.
+5. `.mcp.json` entry (type http), and a Python MCP client test harness that talks to the ASGI app over HTTP, so
+   `make check` and CI run the protocol tests.
 
-**Demo:** A scripted MCP client lists the games, plays `slide` level 1 through the tools, and ends the session;
-`make timeline --verify` on the `agent.` recording passes; the token measurements are written to
+**Demo:** With `make run` up, a scripted MCP client lists the games and plays `slide` level 1 through the tools while
+the open browser tab shows the moves live; `make timeline --verify` on the `agent.` recording passes; the token measurements are written to
 `docs/AGENT-PLAY-MEASUREMENTS.md`.
 
 **Rests on assumptions:** Q43 (real games reachable like in the app), Q44 (optional extra, restart to load).
@@ -429,7 +431,9 @@ tools at an affordable token cost per step.
 
 #### End-to-end
 
-- A client over real stdio plays a custom game to a level clear; the session replays identically with `--verify`.
+- A client over HTTP plays a custom game to a level clear; the session replays identically with `--verify`.
+- Playwright: with the browser open, the agent's moves appear on the canvas, input is disabled, and a human session
+  still cannot be touched by the agent (and vice versa).
 - Asking for a held-out game, an action the game does not offer, or a move past the budget gives a specific tool
   error and leaves the session readable.
 
@@ -442,7 +446,7 @@ tools at an affordable token cost per step.
 
 - Encoder: native-resolution detection (scale 1, 2, 4, letterboxed), legend, deterministic output, change list
   capping.
-- Session manager: budget counting (reset counts), label and file prefix, held-out guard.
+- Session manager: owner rules (one writer), budget counting (reset counts), label and file prefix, held-out guard.
 
 ## V9: Thinking tools, images, and the agent label end to end
 
@@ -483,7 +487,7 @@ shows the agent's hypotheses table; the PNG decodes to the same colours as the t
 
 **Build plan**
 
-1. After the user restarts Claude Code, confirm the `arc-play` tools are visible.
+1. With `make run` up, the user restarts Claude Code; confirm the `arc-play` tools are visible and the browser mirrors a move.
 2. Run blind play as a subagent told not to read `custom_games/*.py` or the docs' spoiler section, on each custom
    game level 1 to 3, with a budget.
 3. Write `docs/AGENT-PLAY-REPORT.md`: per game and level, solved or not, actions used against the fewest-moves

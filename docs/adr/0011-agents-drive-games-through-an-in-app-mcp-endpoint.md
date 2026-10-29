@@ -1,4 +1,4 @@
-# ADR-0011: Agents drive games through a standalone MCP server
+# ADR-0011: Agents drive games through an MCP endpoint inside the app
 
 - Status: Accepted
 - Date: 2026-10-30
@@ -15,16 +15,28 @@ A purpose-built MCP server lets the agent call `observe` and `act` directly agai
 uses. The official Python `mcp` SDK is MIT licensed. Claude Code loads MCP servers from `.mcp.json` at session
 start, so a new server can only be used after a restart; tests must therefore not depend on Claude Code.
 
+First draft chose a standalone stdio server to avoid a shared-session design. Revised the same day, before any code,
+on the user's point that the app already spins up and runs the games: a second process would duplicate game start,
+recording and annotation, and could not show the user anything live. `mcp` 2.3.0 (stable, MIT) is current on PyPI.
+
 ## Decision
 
 **MCP is the primary interface; Playwright stays the UI test harness.**
 
-- `backend/mcp_server.py`, a stdio MCP server (`python -m backend.mcp_server`) built on the `mcp` SDK, registered
-  in `.mcp.json` as `arc-play`. `mcp` is an optional extra (`uv sync --extra agent`), like speech-to-text, so
-  running the app does not need it; it is also in the `dev` group so CI runs the protocol tests. `make mcp` runs it by hand.
-- **Standalone session.** The server owns one game session, played through `ArcadeGameSource` (ADR-0004) and
-  recorded with the same `Recorder` and annotation sidecar as human play. It does not share a session with the
-  web app. Starting a new game ends the previous one. Tool calls are sequential, so there is one writer.
+- `backend/mcp_server.py` builds an MCP server on the `mcp` SDK (v2, streamable HTTP) and `backend/server.py` mounts
+  it at `/mcp` in the same FastAPI app, so `make run` starts the UI and the agent endpoint together. It is
+  registered in `.mcp.json` as `arc-play` with `{"type": "http", "url": "http://127.0.0.1:8000/mcp"}` (host and port
+  follow `make run`). `mcp` is a normal dependency (it is small, and the endpoint is part of the app); CI runs the
+  protocol tests with a real MCP client over HTTP against the ASGI app.
+- **One code path.** The endpoint uses the app's `ArcadeGameSource` (ADR-0004), `Recorder`, `AnnotationSession`
+  and data policy through a small session manager that the WebSocket loop and the MCP tools both use. No second
+  implementation of start, step, record or annotate.
+- **Single writer, agent-owned sessions, human spectator.** A session is owned by one actor, `human` or `agent`.
+  A game started through MCP is agent-owned: the browser shows it live as a read-only view (grid, step, state,
+  the agent's notes, hypotheses and phase) on a `/ws/watch` socket, and its input is disabled. The agent cannot
+  touch a human-owned session and the human cannot move in an agent-owned one, so there is no move conflict
+  and nothing to merge. Shared control (the human takes over mid-game) is deferred until there is evidence it
+  is wanted. The agent starts at most one session; starting another ends the first.
 - **Tools.** `list_games`, `start_game(game_id, max_actions=300, allow_heldout=false)`, `observe(image=false)`,
   `act(action, x?, y?, thought?)`, `reset`, `end_session`, and the thinking tools `note`, `hypothesis_add`,
   `hypothesis_verdict`, `set_phase`. `act` accepts `up/down/left/right/act/click/undo` or `ACTION1..7`, rejects
@@ -49,14 +61,19 @@ start, so a new server can only be used after a restart; tests must therefore no
 | Option | Why not (first) |
 |--------|-----------------|
 | Drive the browser with Playwright / `@playwright/mcp` as the main route | Works today and remains the way to check the UI, but every observation is a screenshot to interpret and every move a key press; slow, costly in tokens, impossible to unit test, and says nothing the game state does not. |
-| MCP bridge into the running web app (shared session, live view, co-play) | The nicest experience, but two writers on one session need a concurrency design (who wins a move, whose recording) before there is any evidence agent play is useful. Deferred; reviewing a session afterwards with `make timeline` covers most of the value. |
+| Standalone stdio server (the first draft) | Duplicates what the app does, cannot show the user a live game, and cannot reuse the running app's state. Its only advantage was no dependency on `make run`. |
+| Shared session with two writers (human and agent move the same game) | Needs a concurrency design (who wins a move, whose recording) before there is evidence agent play is useful. Agent-owned sessions with a spectator view give most of the value. Deferred. |
 | Our own agent loop calling the Claude API | A different project (an evaluation harness); Claude Code as the player is the stated goal. Reconsider for unattended batch evaluation. |
 | One PNG per step only | Larger, slower, and the text grid already carries everything. Image stays available for shape judgement. |
 
 ## Consequences
 
 - **The restart constraint is real.** Building and testing happens with a Python MCP client in the test suite; to
-  actually play, the user restarts Claude Code once so `.mcp.json` is read. Slice V10 starts there.
+  actually play, the user restarts Claude Code once so `.mcp.json` is read, with `make run` already up. If the app
+  is not running the `arc-play` tools show as failed to connect, which is the expected state, not a bug.
+- **Local-only exposure.** The endpoint binds like the rest of the app (127.0.0.1) and has no authentication,
+  which is acceptable for a single-user local tool; the `Origin` header is checked so a web page cannot drive it
+  (the SDK's DNS-rebinding protection is left on).
 - **Spoilers.** An agent in this repo can read `custom_games/*.py`, which would make a blind-play evaluation
   meaningless. Blind play therefore runs as a subagent told not to read game sources and results note that it is
   a convention, not a sandbox.
