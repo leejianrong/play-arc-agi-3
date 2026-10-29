@@ -682,6 +682,107 @@ def flow_layout(app: App, mic: Path, headed: bool) -> None:
         end_session(page)
 
 
+KEY_FOR_ACTION = {1: "ArrowUp", 2: "ArrowDown", 3: "ArrowLeft", 4: "ArrowRight"}
+
+
+def _level1_solution(game_id: str):
+    """Moves (action ids) that clear level 1 of a custom game, from the independent reference solvers."""
+    sys.path.insert(0, str(ROOT))
+    from tests.helpers import reference_solvers as ref
+    from tests.helpers.solver import crates_solution, load_game_class
+
+    game = load_game_class(game_id)()
+    rows = game.current_level.get_data("map")
+    return {
+        "slide": ref.slide,
+        "keydoor": ref.keydoor,
+        "twins": ref.twins,
+        "crates": crates_solution,
+    }[game_id](rows)
+
+
+def _canvas_colours(page) -> int:
+    """How many distinct colours the game canvas actually shows (a blank or broken render shows 1-2)."""
+    return page.evaluate(
+        "() => { const c = document.getElementById('grid'); const d = c.getContext('2d')"
+        ".getImageData(0, 0, c.width, c.height).data; const seen = new Set();"
+        " for (let i = 0; i < d.length; i += 4) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);"
+        " return seen.size; }"
+    )
+
+
+def flow_custom_games(app: App, mic: Path, headed: bool) -> None:
+    """ARC-92: the five custom games are listed, drawn, playable in the browser, clear level 1 with their
+    reference solutions, are labelled train-ok, and their sessions replay identically."""
+    games = ["slide", "lamps", "keydoor", "twins", "crates"]
+    with browser_page(app, mic, headed) as page:
+        for gid in games:
+            check(
+                f"{gid} is listed with a custom tag",
+                page.locator(f".picker-row:has-text('{gid}') .tag:has-text('custom')").count() == 1,
+            )
+        check(
+            "no custom game is tagged held-out",
+            all(page.locator(f".picker-row:has-text('{g}') .tag.heldout").count() == 0 for g in games),
+        )
+
+        for gid in games:
+            start_game(page, gid)
+            check(
+                f"{gid}: the canvas shows a real picture",
+                _canvas_colours(page) >= 4,
+                f"{_canvas_colours(page)} colours",
+            )
+            if gid == "lamps":
+                box = _box(page, "#grid")
+                inner = box["w"] - 2
+                for cell in (3, 7, 8):  # the lights-out solution for board 1 (3x3, 3px lamps, 1px gaps)
+                    gx, gy = 2 + (cell % 3) * 4 + 1, 2 + (cell // 3) * 4 + 1
+                    page.mouse.click(
+                        box["x"] + 1 + (gx * 4 + 2) / 64 * inner, box["y"] + 1 + (gy * 4 + 2) / 64 * inner
+                    )
+                    page.wait_for_timeout(150)
+            else:
+                for action in _level1_solution(gid):
+                    page.keyboard.press(KEY_FOR_ACTION[action])
+                    page.wait_for_timeout(60)
+            page.wait_for_selector("[data-role=prompt]", state="visible", timeout=5_000)
+            check(
+                f"{gid}: level 1 clears in the browser",
+                "Level 1 cleared" in page.inner_text("[data-role=prompt]"),
+            )
+            check(
+                f"{gid}: the progress pip moves on",
+                page.inner_text("#levels") == "levels: 1/3",
+                page.inner_text("#levels"),
+            )
+            end_session(page)
+
+    env = {**os.environ, "ARC_ENVIRONMENTS_DIR": str(app.envs)}
+    for gid in games:
+        recording = sorted(app.rec.glob(f"*{gid}*.recording.jsonl"), key=lambda p: p.stat().st_mtime)[-1]
+        events = app.sidecar(gid)
+        check(
+            f"{gid}: annotated session is labelled train-ok",
+            events[0]["data_use"] == "train-ok",
+            events[0]["data_use"],
+        )
+        done = subprocess.run(
+            [sys.executable, "-m", "backend.timeline", str(recording), "--verify"],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        rows = sum(1 for _ in open(recording))
+        check(
+            f"{gid}: the session replays with every step matched by frame hash",
+            done.returncode == 0 and f"{rows} steps replayed, {rows} matched by frame hash" in done.stderr,
+            done.stderr.strip()[-110:],
+        )
+
+
 FLOWS = {
     "picker_and_meter": flow_picker_and_meter,
     "heldout": flow_heldout,
@@ -690,6 +791,7 @@ FLOWS = {
     "reflect_prompt": flow_reflect_prompt,
     "timeline_and_verify": flow_timeline_and_verify,
     "layout": flow_layout,
+    "custom_games": flow_custom_games,
 }
 
 

@@ -1,0 +1,10 @@
+{
+  "game_id": "crates",
+  "title": "Crates",
+  "tags": [
+    "custom",
+    "movement",
+    "push"
+  ],
+  "class_name": "Crates"
+}

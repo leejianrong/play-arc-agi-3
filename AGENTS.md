@@ -12,12 +12,14 @@ backend/
   server.py            WebSocket session loop: start/action -> GameSource -> Recorder
   config.py            ARC_API_KEY loading
   recorder.py          JSONL session recorder (ADR-0003, ADR-0005: opt-in; schema 3 adds frame_sha256)
+  custom_games.py      copies custom_games/ into the environments dir at startup (docs/CUSTOM-GAMES.md)
   timeline.py          `make timeline`: recording + annotations -> markdown; `--verify` replays (ADR-0007)
   annotations/         session sidecar writer, phase machine, hypothesis registry, data policy (ADR-0007..0009)
   stt/                 Transcriber protocol, faster-whisper engine, VAD segmenter, /ws/audio (ADR-0006)
   game_sources/
     base.py            GameSource protocol, FrameData, GameState/ActionId
     arcade.py           ArcadeGameSource -- the one execution path (see HOW)
+custom_games/           hand-authored games (slide, lamps, keydoor, twins, crates); train-ok data source
 frontend/               index.html, app.js, annotation_ui.js, hotkeys.js, audio_*.js, ... -- no build step
 scripts/                download_all_games.py, e2e.py (`make e2e`: headless Chromium + fake mic)
 docs/                   PLAN.md, adr/, SLICES.md, QUESTIONS.md -- the design record
@@ -65,6 +67,13 @@ in use.
 non-RESET action once a game is already `WIN`/`GAME_OVER` — that's normal, not a
 failure. `ArcadeGameSource` handles this by reusing the last real frame
 (`_last_frame`); don't reintroduce a check that treats an empty frame as an error.
+
+### Custom games
+
+`custom_games/<id>/` holds game source (tracked); `environment_files/` is its gitignored copy, synced at startup.
+`metadata.json` **must set `class_name`** (the toolkit otherwise guesses it from the id's first four characters),
+and every level needs a solver-backed test: see `docs/CUSTOM-GAMES.md`. Players should not read these sources
+before playing them (spoilers; first-contact traces are the valuable ones).
 
 ### Verifying UI changes
 

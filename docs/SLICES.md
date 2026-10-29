@@ -91,6 +91,9 @@ slice).
 
 ## V2: Local custom puzzle environments
 
+**Status (2026-10-30): built** (ARC-92). Five authored games in `custom_games/`, synced into the environments dir at
+startup, solver-tested and browser-tested. See `docs/CUSTOM-GAMES.md`.
+
 **Delivers:** R6 — **substantially de-risked by ADR-0004**
 
 `ArcadeGameSource` already runs `OperationMode.OFFLINE` the same way it

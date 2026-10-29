@@ -1,0 +1,10 @@
+{
+  "game_id": "slide",
+  "title": "Slide",
+  "tags": [
+    "custom",
+    "movement",
+    "momentum"
+  ],
+  "class_name": "Slide"
+}
