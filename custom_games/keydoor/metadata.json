@@ -1,0 +1,10 @@
+{
+  "game_id": "keydoor",
+  "title": "Keys and doors",
+  "tags": [
+    "custom",
+    "movement",
+    "inventory"
+  ],
+  "class_name": "Keydoor"
+}

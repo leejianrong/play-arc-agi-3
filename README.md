@@ -51,6 +51,12 @@ the game; add several in a row) or turn on **dictate** (`V`) so each sentence yo
 **true / false** with its buttons whenever you know, in any order (`Y`/`N` mark the one marked "testing"), and **end session** stops cleanly and shows where the files went. Held-out
 games (see `data_policy.json`) are tagged in the picker and are played without annotation. Measurements: `docs/STT-MEASUREMENTS.md`; design: ADR-0006 to ADR-0009.
 
+## Custom games
+
+Five hand-written puzzle games (`slide`, `lamps`, `keydoor`, `twins`, `crates`, tagged `custom`) live in
+`custom_games/` and appear in the picker. They are the source of `train-ok` annotation data (ADR-0009). Don't read
+their source before playing them if you want a genuine first-contact trace. Adding one: `docs/CUSTOM-GAMES.md`.
+
 ## Reviewing a session
 
 ```sh

@@ -1,0 +1,10 @@
+{
+  "game_id": "lamps",
+  "title": "Lamps",
+  "tags": [
+    "custom",
+    "click",
+    "toggle"
+  ],
+  "class_name": "Lamps"
+}

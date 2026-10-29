@@ -1,0 +1,10 @@
+{
+  "game_id": "twins",
+  "title": "Twins",
+  "tags": [
+    "custom",
+    "movement",
+    "mirror"
+  ],
+  "class_name": "Twins"
+}

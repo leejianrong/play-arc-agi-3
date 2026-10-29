@@ -29,6 +29,12 @@ def resolve_port(preferred: int, host: str) -> int:
 def main() -> None:
     load_dotenv()
 
+    from backend.custom_games import sync_custom_games
+
+    updated = sync_custom_games()
+    if updated:
+        print(f"custom games synced into the environments dir: {', '.join(updated)}")
+
     from backend.config import api_key_from_env
     from backend.game_sources.base import GameSourceError
 
