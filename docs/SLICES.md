@@ -394,3 +394,116 @@ decision points are the wrong grain, the replay, observation and policy pieces a
 
 - Grouping: events at one step merge; silent chunks are dropped; trailing thoughts keep `actions: []`.
 - Observation rendering is deterministic.
+
+
+# Agent play (V8-V10)
+
+Added 2026-10-30. Claude Code drives games through a standalone MCP server (ADR-0011); agent sessions are labelled
+`agent` and kept out of human data (ADR-0012). V8 confronts the riskiest unknown: whether a model can play through
+tools at an affordable token cost per step.
+
+## V8: A scripted client plays a game through MCP
+
+**Delivers:** R15, R16 (text), R17, R19 (budget)
+
+**Build plan**
+
+1. Text observation encoder at native resolution: detect the integer upscale and any letterbox, one character per
+   cell, legend of colours present, header, changes since the last observation (capped). Measure characters and
+   estimated tokens per step on the five custom games and one real game.
+2. Agent session manager: one session over `ArcadeGameSource`, `Recorder` (lean) and the annotation sidecar with
+   `data_use: agent`; action budget; held-out refused unless allowed.
+3. MCP tools `list_games`, `start_game`, `observe`, `act`, `reset`, `end_session` on the `mcp` SDK (optional
+   `agent` extra), with specific error messages.
+4. `.mcp.json` entry, `make mcp`, and a Python MCP client test harness that speaks to the real server over stdio.
+   `mcp` goes in the `dev` dependency group as well as the optional `agent` extra, so `make check` and CI run the
+   protocol tests (the extra is only for running the server by hand).
+
+**Demo:** A scripted MCP client lists the games, plays `slide` level 1 through the tools, and ends the session;
+`make timeline --verify` on the `agent.` recording passes; the token measurements are written to
+`docs/AGENT-PLAY-MEASUREMENTS.md`.
+
+**Rests on assumptions:** Q43 (real games reachable like in the app), Q44 (optional extra, restart to load).
+
+### Test plan
+
+#### End-to-end
+
+- A client over real stdio plays a custom game to a level clear; the session replays identically with `--verify`.
+- Asking for a held-out game, an action the game does not offer, or a move past the budget gives a specific tool
+  error and leaves the session readable.
+
+#### Integration
+
+- The server's tool list and argument schemas match the documented contract.
+- Starting a second game ends the first and writes a complete recording for it.
+
+#### Unit
+
+- Encoder: native-resolution detection (scale 1, 2, 4, letterboxed), legend, deterministic output, change list
+  capping.
+- Session manager: budget counting (reset counts), label and file prefix, held-out guard.
+
+## V9: Thinking tools, images, and the agent label end to end
+
+**Delivers:** R16 (image), R18, R19 (label and policy)
+
+**Build plan**
+
+1. Pure-Python PNG writer and `observe(image=true)` returning MCP image content with the app palette.
+2. `note`, `hypothesis_add`, `hypothesis_verdict`, `set_phase`, and the optional `thought` on `act`, writing the
+   annotation events with `source: "agent"`.
+3. `data_use: agent` and `game_policy` in the policy loader, timeline header and (stub) export refusal;
+   `docs/AGENT-PLAY.md` with the tool contract and the blind-play protocol.
+
+**Demo:** A scripted client plays `crates` level 1 while recording a hypothesis and its verdict; `make timeline`
+shows the agent's hypotheses table; the PNG decodes to the same colours as the text view.
+
+**Rests on assumptions:** Q41 (tool set).
+
+### Test plan
+
+#### End-to-end
+
+- An agent session's timeline shows notes, hypotheses with verdicts and phase changes like a human one.
+
+#### Integration
+
+- A held-out game is refused without `allow_heldout` and recorded as allowed with it.
+- The export stub refuses agent sessions without `--include-agent`.
+
+#### Unit
+
+- PNG: valid file, correct size and palette, deterministic bytes.
+- Thinking tools reuse the human registry and phase machine (same ids, same verdict trail).
+
+## V10: Claude plays, blind, and we measure it
+
+**Delivers:** the first real agent evidence (R15-R19 in use)
+
+**Build plan**
+
+1. After the user restarts Claude Code, confirm the `arc-play` tools are visible.
+2. Run blind play as a subagent told not to read `custom_games/*.py` or the docs' spoiler section, on each custom
+   game level 1 to 3, with a budget.
+3. Write `docs/AGENT-PLAY-REPORT.md`: per game and level, solved or not, actions used against the fewest-moves
+   figure, tokens, hypotheses proposed and confirmed, where it got stuck.
+4. Use the findings: tune game difficulty, fix observation gaps, and note what carries over to the solver.
+
+**Demo:** The report, with recordings that replay with `--verify`.
+
+**Rests on assumptions:** Q43 (blind play is a convention, and the report says so).
+
+### Test plan
+
+#### End-to-end
+
+- Every reported session has an `agent.` recording that passes `make timeline --verify`.
+
+#### Integration
+
+- The report's numbers are recomputed from the recordings by a script, not typed by hand.
+
+#### Unit
+
+- The report script handles unfinished sessions and over-budget runs.

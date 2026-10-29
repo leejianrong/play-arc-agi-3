@@ -47,20 +47,30 @@ _empty — round closed_
 | Q34 | Annotation failure behaviour? | ASSUMED | Mic, model or `/ws/audio` failure shows a banner and play, recording and typed notes continue; truncated sidecars stay readable | PLAN §Open risks, SLICES V3 |
 | Q35 | Sensitive data in annotations? | ASSUMED | Voice audio and transcripts are local only and gitignored; no API key in any annotation file; no cloud STT | ADR-0006 |
 | Q36 | What is one training example? | DECIDED | A decision point: state (observation text, ledger, history) in; reasoning, ledger ops and the action chunk out; silent chunks are not examples | ADR-0010 |
+| Q37 | Primary interface for agent play? (F1) | DECIDED | MCP server first; Playwright stays the UI test harness (and `@playwright/mcp` can be used for UI QA without our code) | ADR-0011 |
+| Q38 | What does the agent see? (F2) | DECIDED | Compact native-resolution text by default, a PNG on request; the encoder is a first version of ARC-87's | ADR-0011 |
+| Q39 | Shared live session with the agent, or standalone? (F3) | DECIDED | Standalone first; a shared/watch mode is deferred because two writers need a concurrency design | ADR-0011 |
+| Q40 | How is agent play labelled? (F4) | DECIDED | `data_use: agent`, `actor: agent`, `agent.` file prefix; never human training data; held-out needs `allow_heldout` | ADR-0012 |
+| Q41 | Which tools, and how does the agent record its reasoning? | ASSUMED | Game tools plus `note`, `hypothesis_add`, `hypothesis_verdict`, `set_phase`, and an optional `thought` on `act`; same annotation events as a human | ADR-0011 |
+| Q42 | How is runaway play prevented? | ASSUMED | Per-session action budget, default 300 (reset counts); exceeding it is an error and the session stays readable | ADR-0011 |
+| Q43 | Real games and spoilers? | ASSUMED | Real games available like in the app; blind play is a convention (subagent told not to read `custom_games/`), not a sandbox | ADR-0011 |
+| Q44 | How is the server shipped? | ASSUMED | Optional `agent` extra, `.mcp.json` entry `arc-play`, `make mcp`; Claude Code needs one restart to load it | ADR-0011 |
+| Q45 | Failure behaviour for agents? | ASSUMED | MCP tool errors with specific messages (unknown game, no session, action not offered, budget exceeded, held-out refused); never a crash | ADR-0011, ADR-0012 |
+| Q46 | Our own Playwright driver for agent play? | DEFERRED | The existing `make e2e` harness and `@playwright/mcp` cover UI checks; build a UI-driving library only if live co-play (Q39) is picked up | n/a |
 
 ## Coverage
 
 | Category | Covered by |
 |----------|-----------|
-| Primary user and actors | Q4, Q25 |
+| Primary user and actors | Q4, Q25, Q40 |
 | Scope boundary | Q2, Q5, Q28 |
 | Data model and identity | Q3, Q14, Q26, Q27, Q30, Q36 |
 | State and storage | Q6, Q7, Q29, Q31 |
-| Concurrency and conflict | Q7 |
-| Interfaces and contracts | Q1, Q8, Q9, Q10, Q11, Q32 |
-| Failure behaviour | Q15, Q34 |
-| External dependencies | Q8, Q12, Q18, Q24 |
+| Concurrency and conflict | Q7, Q39 |
+| Interfaces and contracts | Q1, Q8, Q9, Q10, Q11, Q32, Q37, Q38, Q41 |
+| Failure behaviour | Q15, Q34, Q42, Q45 |
+| External dependencies | Q8, Q12, Q18, Q24, Q44 |
 | Runtime and deployment | Q1, Q13 |
 | Measurable success | Q16 |
-| Security and secrets | Q12, Q35 |
+| Security and secrets | Q12, Q35, Q43 |
 | Versioning and migration | Q14 |

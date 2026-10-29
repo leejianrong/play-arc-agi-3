@@ -1,6 +1,6 @@
 # ARC Play (play-arc-agi-3): Plan
 
-Status: agreed · Milestone: MVP (done) + Annotation (planned 2026-10-13, slices V3-V6)
+Status: agreed · Milestone: MVP (done) + Annotation (done, V3-V6) + Export (V7) + Agent play (planned 2026-10-30, V8-V10)
 
 ## Problem
 
@@ -65,8 +65,13 @@ Which games to annotate is governed by ADR-0009.
 ## Users and actors
 
 Single primary user: you, playing solo, locally. No multi-user story, no
-accounts beyond your own ARC API key. No non-human actors in this milestone
-(no agent play, no CI). Nothing to arbitrate — there's only one actor.
+accounts beyond your own ARC API key.
+
+**Agent actor (from 2026-10-30).** Claude Code can also play, through an MCP
+server (ADR-0011). It is a second, separate actor: it never shares a session
+with you, its sessions are labelled `agent` and kept out of the human dataset
+(ADR-0012), and held-out games need an explicit flag. When the two conflict,
+the human data policy wins.
 
 ## Scope
 
@@ -91,6 +96,11 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 - Any fine-tuning run (gated by `solve-arc-agi-3` ADR-0012). The training-format exporter is planned as
   slice V7 (ADR-0010: a training example is a decision point).
 - Cloud speech-to-text, speaker diarization, multi-person sessions.
+
+**Agent play (V8-V10).** In: a standalone MCP server with a text observation, optional PNG, move/click/reset,
+reasoning tools, an action budget, recording in the human format, and the `agent` label (R15-R19). Out: a shared
+live session between you and the agent (deferred: two writers need a concurrency design), our own API-driven agent
+loop or batch evaluation harness, and any use of agent traces as training data.
 - Agent play, scorecards, or anything competition-submission-related — this
   is a human-play tool.
 - Multi-user, cloud sync, mobile. Single laptop, single user.
@@ -118,6 +128,11 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | R12 | Annotations live in a sidecar file aligned to steps; each recorded step carries a frame hash so replay can be verified | Must-have |
 | R13 | A CLI renders a session as a readable timeline and verifies a replay against the recorded frame hashes | Must-have |
 | R14 | Every annotated session is labelled `train-ok`, `reference-only` or `heldout`; annotating a held-out game is refused | Must-have |
+| R15 | An agent can list games, start one, observe, act, reset and end a session through MCP tools, with specific errors | Core goal (agent) |
+| R16 | Observations are compact text at the game's native resolution (legend, header, changes since last), with a PNG on request; token cost per step is measured | Must-have |
+| R17 | Agent play is recorded in the human format and replays with `--verify` | Must-have |
+| R18 | The agent can record reasoning (notes, hypotheses, phases) as the same annotation events | Must-have |
+| R19 | Agent sessions are labelled `agent`, never exported as human data, held-out games need an explicit flag, and each session has an action budget | Must-have |
 
 ## Shape
 
@@ -133,6 +148,9 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | S8 | Phase state machine (observe → probe auto on first action; hotkeys for the rest) and hypothesis registry with stable IDs | ADR-0008 |
 | S9 | `Recorder` gains `frame_sha256` (schema 3); `make timeline` CLI merges recording + annotations and replays with `--verify` | ADR-0007 |
 | S10 | `data_policy.json` + `data_use` label on `session_start`; annotation refused for held-out games | ADR-0009 |
+| S11 | `backend/mcp_server.py`: stdio MCP server (optional `agent` extra) with game and reasoning tools over `ArcadeGameSource` | ADR-0011 |
+| S12 | Observation encoder: native-resolution text (legend, header, changes since last), and a pure-Python PNG with the app palette | ADR-0011 |
+| S13 | Agent session manager: one session, action budget, `agent.` recordings, `data_use: agent`, held-out guard | ADR-0011, ADR-0012 |
 
 ## Affordances
 
@@ -163,6 +181,8 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 | `Transcriber` (faster-whisper) | optional-extra service | Utterance audio buffers → text; fake implementation in tests |
 | `AnnotationWriter` | handler | Appends to `*.annotations.jsonl` |
 | `make timeline FILE=… [--verify]` | CLI | Recording + annotations → markdown; replay against `frame_sha256` |
+| MCP tools `list_games`, `start_game`, `observe`, `act`, `reset`, `end_session`, `note`, `hypothesis_add`, `hypothesis_verdict`, `set_phase` | MCP server (agent-facing) | `ArcadeGameSource`, `Recorder`, `AnnotationSession` |
+| `make mcp` | CLI | Runs the MCP server by hand (Claude Code starts it from `.mcp.json`) |
 
 ## Implementation decisions
 
@@ -236,6 +256,9 @@ assert.
 | Q31 | Annotated sessions at least Lean; raw audio kept locally | Low — one flag each |
 | Q32 | Typed-note focus on `T`; hotkeys `1-5/H/Y/N/M` | Low — config-level remap |
 | Q33 | Initial held-out list is every third public game in sorted order | Medium — if it disagrees with the solver's eval split, the file must be edited before annotating those games |
+| Q41 | Tool set, `thought` parameter on `act`, friendly action names | Low — names are a contract but cheap to rename before saved prompts exist |
+| Q42 | Default budget 300 actions per session | Low — an argument |
+| Q43 | Blind play is a convention (a subagent told not to read game sources), not a sandbox | Medium — results must say so; real isolation would need a separate working directory |
 
 ## Open risks
 
@@ -251,6 +274,12 @@ assert.
   or hallucinated segments, and CPU latency may exceed the 1-3 s estimate.
   Slice V3 measures it; mitigations are VAD tuning, a smaller or GPU model,
   and the review step.
+- **Token cost of observations.** Native-resolution text keeps the 16x16 custom games small, but a 64x64 real game
+  is several thousand characters per step. Slice V8 measures it first; if too high the encoder needs object
+  summaries (ARC-87) before agent play on real games is practical.
+- **The restart.** A new MCP server is only visible to Claude Code after a restart, so the first real agent run
+  (V10) is gated on the user restarting once. Everything before it is tested with a Python MCP client.
+- **Spoilers.** An agent that can read `custom_games/` is not playing blind; V10's results state how it was run.
 - **Habit drift.** The protocol only helps if followed; phase labels and
   prediction/result phrasing degrade as you tire. The timeline CLI is how this
   gets noticed.
