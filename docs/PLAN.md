@@ -88,9 +88,8 @@ accounts beyond your own ARC API key. No non-human actors in this milestone
 **Out.**
 - An in-app replay viewer or transcript editor. Review is by the timeline CLI
   and hand-editing the annotations file; revisit after real sessions.
-- A training-format exporter and any fine-tuning. The schema keeps
-  `(thought, action)` derivable (ADR-0007); building the exporter waits for
-  actual data and for `solve-arc-agi-3`'s fine-tuning gate.
+- Any fine-tuning run (gated by `solve-arc-agi-3` ADR-0012). The training-format exporter is planned as
+  slice V7 (ADR-0010: a training example is a decision point).
 - Cloud speech-to-text, speaker diarization, multi-person sessions.
 - Agent play, scorecards, or anything competition-submission-related — this
   is a human-play tool.
